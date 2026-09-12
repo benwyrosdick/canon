@@ -1,0 +1,22 @@
+[package]
+name = "canon-3d"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A local two-player, destructible-terrain artillery game"
+license = "MIT"
+
+[dependencies]
+bevy = { version = "0.17.3", default-features = false, features = [
+    "std", "async_executor", "multi_threaded", "bevy_asset", "bevy_audio",
+    "bevy_color", "bevy_core_pipeline", "bevy_gizmos", "bevy_log",
+    "bevy_pbr", "bevy_render", "bevy_image", "bevy_mesh", "bevy_camera",
+    "bevy_light", "bevy_shader", "bevy_text", "bevy_ui", "bevy_ui_render",
+    "bevy_window", "bevy_winit", "default_font", "wav", "x11", "wayland",
+] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
