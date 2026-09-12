@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="3D Canon">
+  <rect width="128" height="128" rx="28" fill="#132B3A"/>
+  <path d="M0 78 L28 92 L52 82 L80 98 L128 86 V128 H0 Z" fill="#326B73"/>
+  <path d="M8 96 L42 112 L110 102 L118 88 L74 72 Z" fill="#8AAA58"/>
+  <path d="M8 96 L42 112 L74 72 Z" fill="#668F51"/>
+  <g fill="#FFD16B">
+    <circle cx="78" cy="36" r="2.2"/>
+    <circle cx="86" cy="32" r="2.4"/>
+    <circle cx="94" cy="30" r="2.7"/>
+    <circle cx="102" cy="31" r="3"/>
+  </g>
+  <circle cx="110" cy="34" r="6" fill="#FFDC81"/>
+  <rect x="28" y="70" width="44" height="14" rx="3" fill="#B54339"/>
+  <path d="M30 70 L40 58 L68 60 L76 70 Z" fill="#F66D52"/>
+  <g transform="translate(52 62) rotate(-43)">
+    <rect x="0" y="-8" width="46" height="16" rx="4" fill="#10232D"/>
+    <rect x="34" y="-10" width="8" height="20" rx="2" fill="#D7A344"/>
+  </g>
+  <circle cx="36" cy="90" r="11" fill="#122832"/>
+  <circle cx="36" cy="90" r="5" fill="#F1BE5E"/>
+  <circle cx="62" cy="90" r="11" fill="#122832"/>
+  <circle cx="62" cy="90" r="5" fill="#F1BE5E"/>
+</svg>

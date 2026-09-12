@@ -70,6 +70,47 @@ provide `MACOS_SIGN_IDENTITY="Developer ID Application: ..."` when building, the
 notarize and staple the DMG with your Apple Developer credentials. The script does
 not perform notarization automatically.
 
+### Linux package
+
+You do **not** need a separate build per distro. One **x86_64 GNU/Linux**
+binary (glibc) runs on Arch, Fedora, Debian, and Ubuntu if the machine has
+Vulkan and the usual window/audio libraries.
+
+```sh
+bash scripts/build-linux.sh
+```
+
+Requires Linux, Rust, and the native packages listed under Native prerequisites.
+Output: **`dist/linux/3D-Canon-<version>-linux-<arch>.tar.gz`**.
+
+Extract and run `./3d-canon`, or `bash install.sh` to add a current-user menu
+entry and icon (`~/.local/bin`, `~/.local/share/applications`).
+
+**Arch:** you can use that tarball, or build a pacman package from this tree:
+
+```sh
+cd packaging/arch
+makepkg -f
+sudo pacman -U 3d-canon-*.pkg.tar.zst
+```
+
+Runtime packages:
+
+```sh
+# Arch
+sudo pacman -S alsa-lib libxkbcommon vulkan-icd-loader wayland libx11
+# Debian / Ubuntu
+sudo apt install libasound2t64 libxkbcommon0 libwayland-client0 libx11-6 libvulkan1 libudev1
+```
+
+GitHub Actions has a **Linux app** workflow (manual or `v*` tag). Download the
+`3D-Canon-linux-x86_64` artifact. Building on Ubuntu 24.04 keeps glibc old enough
+for current Arch. An Arch-built binary may fail on older Debian/Ubuntu because
+Arch’s glibc is newer.
+
+There is no AppImage or Flatpak in this version. A `.deb` / `.rpm` is unnecessary
+if you ship the tarball.
+
 ### Online 1v1
 
 The host simulates the match. The guest sends aim and fire; both see live aiming.

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=3D Canon
+GenericName=Artillery game
+Comment=Physics-based two-player cannon game
+Exec=3d-canon
+Icon=3d-canon
+Terminal=false
+Categories=Game;ActionGame;
+Keywords=cannon;artillery;multiplayer;
+StartupNotify=true

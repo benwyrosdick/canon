@@ -1,0 +1,29 @@
+name: Linux app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: x86_64 tarball
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - name: Install native libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev \
+            libxkbcommon-dev libx11-dev pkg-config
+      - name: Build tarball
+        run: bash scripts/build-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 3D-Canon-linux-x86_64
+          path: dist/linux/*.tar.gz
+          if-no-files-found: error

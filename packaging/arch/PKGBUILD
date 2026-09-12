@@ -1,0 +1,33 @@
+# Maintainer: 3D Canon
+# From the repository root:
+#   cd packaging/arch && makepkg -f
+pkgname=3d-canon
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Physics-based two-player 3D cannon game"
+arch=('x86_64' 'aarch64')
+url="https://github.com"
+license=('MIT')
+depends=('alsa-lib' 'libxkbcommon' 'vulkan-icd-loader' 'wayland' 'libx11' 'systemd-libs')
+makedepends=('cargo' 'rust' 'clang' 'pkgconf')
+options=(!lto)
+source=()
+sha256sums=()
+
+_root="$(cd "$(dirname "$startdir")/.." && pwd)"
+
+prepare() {
+  mkdir -p "$srcdir"
+}
+
+build() {
+  cd "$_root"
+  cargo build --locked --release --bin canon-3d --features game
+}
+
+package() {
+  cd "$_root"
+  install -Dm755 target/release/canon-3d "$pkgdir/usr/bin/3d-canon"
+  install -Dm644 packaging/3d-canon.desktop "$pkgdir/usr/share/applications/3d-canon.desktop"
+  install -Dm644 packaging/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/3d-canon.svg"
+}
