@@ -1,24 +1,28 @@
-mod camera;
-mod game;
-mod physics;
-mod smoke;
-mod sound;
-mod terrain;
-mod ui;
-mod visuals;
-mod windsock;
-
 use bevy::prelude::*;
+use canon_3d::{
+    camera, game,
+    net::{self, DEFAULT_RELAY, Hello, Menu, PlayMode, RoomCode},
+    smoke, sound, terrain, ui, visuals, windsock,
+};
+
+#[derive(Resource)]
+struct BootNet {
+    hello: Hello,
+    relay: String,
+    code: RoomCode,
+}
 
 fn main() {
-    let seed = std::env::args()
-        .skip(1)
+    let args: Vec<String> = std::env::args().collect();
+    let seed = args
+        .iter()
         .find_map(|arg| {
             arg.strip_prefix("--seed=")
                 .and_then(|s| s.parse::<u64>().ok())
         })
         .unwrap_or_else(game::fresh_seed);
-    let size = std::env::args()
+    let size = args
+        .iter()
         .find_map(|arg| {
             arg.strip_prefix("--size=")
                 .map(|value| value.parse::<terrain::MapSize>())
@@ -29,8 +33,29 @@ fn main() {
             std::process::exit(2);
         })
         .unwrap_or_default();
+    let relay = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--relay=").map(str::to_string))
+        .unwrap_or_else(|| DEFAULT_RELAY.into());
+    let smoke = args.iter().any(|arg| arg == "--smoke-test");
+    let local = smoke || args.iter().any(|arg| arg == "--local");
+    let host = args.iter().any(|arg| arg == "--host");
+    let join = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--join=").and_then(RoomCode::parse));
+    if args.iter().any(|arg| arg.starts_with("--join=")) && join.is_none() {
+        eprintln!("Invalid --join code. Use 4 characters from 2-9 and A-Z, without 0/O/1/I.");
+        std::process::exit(2);
+    }
     let terrain = terrain::Terrain::new(seed, size);
-    let game = game::Game::new(seed, &terrain);
+    let mut game = game::Game::new(seed, &terrain);
+    let play = if local {
+        game.paused = false;
+        PlayMode::Local
+    } else {
+        game.paused = true;
+        PlayMode::Menu
+    };
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.57, 0.73, 0.80)))
         .insert_resource(AmbientLight {
@@ -41,6 +66,8 @@ fn main() {
         .insert_resource(Time::<Fixed>::from_hz(120.0))
         .insert_resource(terrain)
         .insert_resource(game)
+        .insert_resource(play)
+        .insert_resource(Menu::new(relay.clone()))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "3D CANON — Wind & Warfare".into(),
@@ -52,6 +79,7 @@ fn main() {
         .add_systems(
             Startup,
             (
+                boot_net,
                 visuals::setup,
                 camera::setup,
                 ui::setup,
@@ -63,6 +91,8 @@ fn main() {
         .add_systems(
             Update,
             (
+                net::menu_input,
+                net::pump,
                 game::input,
                 visuals::sync_environment,
                 windsock::update,
@@ -75,8 +105,30 @@ fn main() {
             )
                 .chain(),
         );
-    if std::env::args().any(|arg| arg == "--smoke-test") {
+    if host {
+        let code = RoomCode::random(seed);
+        app.insert_resource(BootNet {
+            hello: Hello::Host(code),
+            relay,
+            code,
+        });
+    } else if let Some(code) = join {
+        app.insert_resource(BootNet {
+            hello: Hello::Guest(code),
+            relay,
+            code,
+        });
+    }
+    if smoke {
         app.add_systems(Update, smoke::run.after(ui::update));
     }
     app.run();
+}
+
+fn boot_net(mut commands: Commands, boot: Option<Res<BootNet>>, mut menu: ResMut<Menu>) {
+    let Some(boot) = boot else {
+        return;
+    };
+    menu.status = format!("Connecting to {} ({})...", boot.relay, boot.code.as_str());
+    net::connect(&mut commands, boot.hello, boot.relay.clone(), boot.code);
 }

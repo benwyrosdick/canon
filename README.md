@@ -1,6 +1,7 @@
 # 3D Canon — Wind & Warfare
 
-A native Rust / Bevy artillery game for **two players sharing one computer**.
+A native Rust / Bevy artillery game for **two players sharing one computer** or
+**online 1v1** through a tiny self-hosted TCP relay.
 Aim across a low-poly island, account for the wind, and blast the other cannon.
 Every explosion carves a crater into the actual collision surface.
 
@@ -17,11 +18,47 @@ Bevy 0.17.3 is selected for compatibility with the installed Rust 1.92 toolchain
 the package's minimum Rust version is 1.88. All models, terrain, effects, and sounds
 are generated in code. No asset downloads are needed at runtime.
 
+`--local` skips the menu and starts a hot-seat match. `--smoke-test` does the same.
+
 For a repeatable map and wind sequence:
 
 ```sh
-cargo run --locked -- --seed=42
+cargo run --locked -- --local --seed=42
 ```
+
+### Online 1v1
+
+The host simulates the match. The guest sends aim and fire; both see live aiming.
+A small relay forwards packets. It does not run the game.
+
+On the server (or this machine, for two local windows):
+
+```sh
+cargo run --locked --bin canon-relay
+```
+
+Default listen address is `0.0.0.0:3478`. Pass `127.0.0.1:3478` or `0.0.0.0:9000` as the first argument to change it.
+
+Then each player:
+
+1. Run `cargo run --locked`.
+2. **Host** creates a 4-character room code (no `0/O/1/I`). Share that code.
+3. **Join** types the code and clicks Join.
+4. Host is Red. Guest is Blue. Only the active player can aim and fire.
+5. Host only: New Map / size. Pause is disabled online.
+
+```sh
+# Two windows on one computer
+cargo run --locked --bin canon-relay
+cargo run --locked -- --host --seed=42
+cargo run --locked -- --join=THECODE
+```
+
+Point both games at a remote relay with `--relay=YOUR.SERVER.IP:3478`.
+Players only need outbound TCP; no port-forwarding on their routers.
+Open TCP 3478 on the VPS. Room codes are enough after that.
+
+If the other player disconnects, both return to the menu.
 
 ### Map sizes
 
@@ -80,7 +117,7 @@ cargo run --release --locked
 | Right mouse drag | Orbit the aiming camera |
 | Mouse wheel | Zoom the aiming camera |
 | C | Toggle overview |
-| Esc | Pause / resume |
+| Esc | Pause / resume (local only) |
 | M | Toggle firing / impact sound |
 | R | Start a fresh randomized match at the selected size |
 | Shift + R | Restart the current size, map, and wind sequence |
@@ -116,6 +153,8 @@ for distance, height, and crosswind. Press C to inspect the whole battlefield.
 | Module | Responsibility |
 | --- | --- |
 | `src/main.rs` | App setup and system scheduling |
+| `src/bin/canon-relay.rs` | Self-hosted TCP room relay |
+| `src/net/` | Room codes, framing, host-authoritative 1v1 protocol, client thread |
 | `src/game.rs` | Match state, input, fixed simulation, damage, turn handoffs |
 | `src/physics.rs` | Analytic gravity/drag integration, swept sphere collision, splash damage |
 | `src/terrain.rs` | Seeded landscapes, triangle collision, crater deformation, mesh generation |
@@ -158,7 +197,8 @@ Add `--size=medium` or `--size=large` to check those sizes too.
 Tests cover timestep consistency, wind effects, fast-shot collision, damage falloff,
 terrain repeatability and spawn pads across 100 seeds for each size, map boundaries,
 size selection and replay behavior, crater limits, turn ordering,
-round wind sharing, pause, misses, and a complete direct-hit/settling/victory sequence.
+round wind sharing, pause, misses, a complete direct-hit/settling/victory sequence,
+room-code parsing, message encode/decode, and relay join/forward/full-room behavior.
 
 Manual playtest: play both turns, fire short and long shots, create a crater near a
 cannon, inspect health and settling, try pause during flight, finish a match, and try

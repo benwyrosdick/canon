@@ -6,6 +6,10 @@ rust-version = "1.88"
 description = "A local two-player, destructible-terrain artillery game"
 license = "MIT"
 
+[lib]
+name = "canon_3d"
+path = "src/lib.rs"
+
 [dependencies]
 bevy = { version = "0.17.3", default-features = false, features = [
     "std", "async_executor", "multi_threaded", "bevy_asset", "bevy_audio",

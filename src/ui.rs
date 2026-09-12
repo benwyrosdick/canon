@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     game::{Action, Game, Phase},
+    net::{Menu, MenuAction, Net, PlayMode},
     terrain::MapSize,
     visuals::{BLUE, GOLD, RED},
 };
@@ -22,9 +23,13 @@ pub enum Label {
     Pause,
     Map,
     NextMap,
+    MenuStatus,
+    JoinCode,
 }
 #[derive(Component)]
 pub struct HealthFill(usize);
+#[derive(Component)]
+pub struct MenuRoot;
 
 fn text(value: &str, size: f32, color: Color) -> impl Bundle {
     (
@@ -98,15 +103,100 @@ pub fn setup(mut commands: Commands) {
             });
         });
     });
+    commands
+        .spawn((
+            MenuRoot,
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100),
+                height: percent(100),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                row_gap: px(16),
+                ..default()
+            },
+            BackgroundColor(INK.with_alpha(0.94)),
+            GlobalZIndex(10),
+        ))
+        .with_children(|menu| {
+            menu.spawn(text("3D CANON", 48.0, PAPER));
+            menu.spawn(text("LOCAL OR ONLINE 1V1", 14.0, GOLD));
+            menu.spawn((text("", 16.0, GOLD), Label::MenuStatus));
+            menu.spawn(Node {
+                column_gap: px(12),
+                ..default()
+            })
+            .with_children(|row| {
+                for (action, label) in [
+                    (MenuAction::Local, "LOCAL"),
+                    (MenuAction::Host, "HOST"),
+                    (MenuAction::Join, "JOIN"),
+                ] {
+                    row.spawn((
+                        Button,
+                        action,
+                        Node {
+                            padding: UiRect::axes(px(22), px(14)),
+                            ..default()
+                        },
+                        BackgroundColor(if action == MenuAction::Local {
+                            GOLD
+                        } else {
+                            Color::srgb(0.18, 0.25, 0.28)
+                        }),
+                        BorderRadius::all(px(8)),
+                    ))
+                    .with_children(|button| {
+                        button.spawn(text(
+                            label,
+                            16.0,
+                            if action == MenuAction::Local {
+                                INK
+                            } else {
+                                PAPER
+                            },
+                        ));
+                    });
+                }
+            });
+            menu.spawn((text("JOIN CODE: ____", 18.0, PAPER), Label::JoinCode));
+            menu.spawn(text(
+                "Type a 4-character code, then Join. Host shares the code after connecting.",
+                14.0,
+                MUTED,
+            ));
+            menu.spawn(text(
+                "Online needs canon-relay. Default 127.0.0.1:3478   --relay=host:port",
+                13.0,
+                MUTED,
+            ));
+        });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update(
     game: Res<Game>,
+    mode: Option<Res<PlayMode>>,
+    menu: Option<Res<Menu>>,
+    net: Option<Res<Net>>,
     mut labels: Query<(&Label, &mut Text, &mut TextColor)>,
     mut health: Query<(&HealthFill, &mut Node)>,
-    mut pause: Query<(&Label, &mut Visibility)>,
+    mut pause: Query<(&Label, &mut Visibility), Without<MenuRoot>>,
+    mut menu_root: Query<&mut Visibility, With<MenuRoot>>,
     mut buttons: Query<(&Action, &Interaction, &mut BackgroundColor)>,
 ) {
+    let online = mode.as_deref() == Some(&PlayMode::Online);
+    let waiting = net.as_ref().is_some_and(|net| net.waiting);
+    let show_menu = mode.as_deref() == Some(&PlayMode::Menu) || waiting;
+    for mut visibility in &mut menu_root {
+        *visibility = if show_menu {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    let mine = net.as_ref().is_some_and(|net| net.my_turn(&game));
     let cannon = game.cannons[game.active];
     let player = if game.active == 0 { "RED" } else { "BLUE" };
     let bearing = game
@@ -122,7 +212,9 @@ pub fn update(
             Label::Status => {
                 color.0 = if game.active == 0 { RED } else { BLUE };
                 match game.phase {
+                    Phase::Handoff if online && !mine => format!("WAITING FOR {player}"),
                     Phase::Handoff => format!("{player}, YOUR TURN"),
+                    Phase::Aiming if online && !mine => format!("{player} IS AIMING"),
                     Phase::Aiming => format!("{player} / LINE UP YOUR SHOT"),
                     Phase::Flying => "CANNONBALL IN FLIGHT".into(),
                     Phase::Resolving(_) => "IMPACT / SETTLING".into(),
@@ -161,7 +253,18 @@ pub fn update(
             ),
             Label::NextMap => format!("{} selected. Apply: New Map / R", game.next_size.label()),
             Label::Message => {
-                if game.paused {
+                if online {
+                    if let Some(net) = net.as_deref() {
+                        format!(
+                            "{}  You are {}. Room {}.",
+                            game.message,
+                            if net.seat == 0 { "Red / host" } else { "Blue" },
+                            net.code.as_str()
+                        )
+                    } else {
+                        game.message.clone()
+                    }
+                } else if game.paused {
                     "Simulation paused. Press Esc to resume.".into()
                 } else if game.phase == Phase::Handoff {
                     format!(
@@ -172,6 +275,22 @@ pub fn update(
                     game.message.clone()
                 }
             }
+            Label::MenuStatus => menu
+                .as_ref()
+                .map(|menu| {
+                    if menu.status.is_empty() {
+                        "Hot-seat on this computer, or host/join over canon-relay.".into()
+                    } else {
+                        menu.status.clone()
+                    }
+                })
+                .unwrap_or_default(),
+            Label::JoinCode => format!(
+                "JOIN CODE: {:<4}",
+                menu.as_ref()
+                    .map(|menu| menu.join_code.as_str())
+                    .unwrap_or("")
+            ),
             Label::Primary => {
                 if game.paused {
                     "PAUSED / ESC".into()

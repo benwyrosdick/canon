@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::{
+    net::{self, Msg, Net, PlayMode},
     physics::*,
     terrain::{MapSize, Rng, Terrain},
 };
@@ -124,6 +125,48 @@ impl Game {
         self.message = "Shot away!".into();
     }
 
+    pub fn restart_world(
+        seed: u64,
+        size: MapSize,
+        game: &mut Game,
+        terrain: &mut Terrain,
+        meshes: &mut Assets<Mesh>,
+    ) {
+        let muted = game.muted;
+        let next_size = game.next_size;
+        let mut next = Terrain::new(seed, size);
+        next.mesh = terrain.mesh.clone();
+        if let Some(mesh) = meshes.get_mut(&terrain.mesh) {
+            *mesh = next.build_mesh();
+        }
+        *game = Game::new(seed, &next);
+        game.muted = muted;
+        game.next_size = next_size;
+        *terrain = next;
+    }
+
+    fn health(&self) -> [f32; 2] {
+        [self.cannons[0].health, self.cannons[1].health]
+    }
+
+    fn cannon_y(&self) -> [f32; 2] {
+        [self.cannons[0].position.y, self.cannons[1].position.y]
+    }
+
+    fn turn_msg(&self) -> Msg {
+        Msg::Turn {
+            active: self.active,
+            round: self.round,
+            wind: self.wind,
+            health: self.health(),
+            cannon_y: self.cannon_y(),
+            winner: match self.phase {
+                Phase::Finished(winner) => Some(winner),
+                _ => None,
+            },
+        }
+    }
+
     fn finish_turn(&mut self) {
         self.phase = match (self.cannons[0].health <= 0.0, self.cannons[1].health <= 0.0) {
             (true, true) => Phase::Finished(None),
@@ -155,14 +198,24 @@ pub fn fresh_seed() -> u64 {
         .as_nanos() as u64
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    mode: Option<Res<PlayMode>>,
+    mut net: Option<ResMut<Net>>,
     mut game: ResMut<Game>,
     mut terrain: ResMut<Terrain>,
     mut meshes: ResMut<Assets<Mesh>>,
     buttons: Query<(&Interaction, &Action), Changed<Interaction>>,
 ) {
+    let online = mode.as_deref() == Some(&PlayMode::Online);
+    let waiting = net.as_ref().is_some_and(|net| net.waiting);
+    if mode.as_deref() == Some(&PlayMode::Menu) || waiting {
+        return;
+    }
+    let host = net::is_authority(mode.as_deref(), net.as_deref());
+    let my_turn = net::my_turn(mode.as_deref(), net.as_deref(), &game);
     let mut primary = keys.just_pressed(KeyCode::Space) || keys.just_pressed(KeyCode::Enter);
     let mut restart = keys.just_pressed(KeyCode::KeyR);
     for (interaction, action) in &buttons {
@@ -170,42 +223,60 @@ pub fn input(
             match action {
                 Action::Primary => primary = true,
                 Action::Restart => restart = true,
-                Action::SelectSize(size) => game.next_size = *size,
+                Action::SelectSize(size) if host => game.next_size = *size,
+                Action::SelectSize(_) => {}
             }
         }
     }
-    if restart {
+    if restart && host {
         let (seed, size) = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight)
         {
             (game.seed, game.size)
         } else {
             (fresh_seed(), game.next_size)
         };
-        let mut next = Terrain::new(seed, size);
-        next.mesh = terrain.mesh.clone();
-        if let Some(mesh) = meshes.get_mut(&terrain.mesh) {
-            *mesh = next.build_mesh();
+        Game::restart_world(seed, size, &mut game, &mut terrain, &mut meshes);
+        if let Some(net) = net.as_deref() {
+            net.send(&Msg::NewMatch { seed, size });
         }
-        let muted = game.muted;
-        *game = Game::new(seed, &next);
-        game.muted = muted;
-        *terrain = next;
         return;
     }
     if keys.just_pressed(KeyCode::KeyM) {
         game.muted = !game.muted;
     }
-    if keys.just_pressed(KeyCode::Escape) {
+    if keys.just_pressed(KeyCode::Escape) && !online {
         game.paused = !game.paused;
     }
-    if game.paused {
+    if game.paused || !my_turn {
         return;
     }
     if primary {
         if game.phase == Phase::Handoff {
-            game.phase = Phase::Aiming;
-        } else {
+            if host {
+                game.phase = Phase::Aiming;
+            }
+            if let Some(net) = net.as_deref() {
+                net.send(&Msg::Ready);
+            }
+        } else if host {
             game.fire();
+            if game.phase == Phase::Flying
+                && let Some(net) = net.as_deref()
+            {
+                let cannon = game.cannons[game.active];
+                net.send(&Msg::ShotFired {
+                    yaw: cannon.yaw,
+                    elevation: cannon.elevation,
+                    power: cannon.power,
+                });
+            }
+        } else if let Some(net) = net.as_deref() {
+            let cannon = game.cannons[game.active];
+            net.send(&Msg::Fire {
+                yaw: cannon.yaw,
+                elevation: cannon.elevation,
+                power: cannon.power,
+            });
         }
     }
     if game.phase != Phase::Aiming {
@@ -221,17 +292,30 @@ pub fn input(
     let dt = time.delta_secs().min(0.05) * precision;
     let active = game.active;
     let cannon = &mut game.cannons[active];
-    // A decreases bearing; D increases it.
     cannon.yaw += axis(KeyCode::KeyD, KeyCode::KeyA) * dt * 0.55;
     cannon.yaw = cannon.yaw.rem_euclid(std::f32::consts::TAU);
     cannon.elevation = (cannon.elevation + axis(KeyCode::KeyW, KeyCode::KeyS) * dt * 0.45)
         .clamp(5.0_f32.to_radians(), 85.0_f32.to_radians());
     cannon.power =
         (cannon.power + axis(KeyCode::KeyE, KeyCode::KeyQ) * dt * 14.0).clamp(15.0, 52.0);
+    if online && let Some(net) = net.as_deref_mut() {
+        net.aim_timer += time.delta_secs();
+        if net.aim_timer >= 1.0 / 15.0 {
+            net.aim_timer = 0.0;
+            net.send(&Msg::Aim {
+                yaw: cannon.yaw,
+                elevation: cannon.elevation,
+                power: cannon.power,
+            });
+        }
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn simulate(
     time: Res<Time<Fixed>>,
+    mode: Option<Res<PlayMode>>,
+    net: Option<Res<Net>>,
     mut game: ResMut<Game>,
     mut terrain: ResMut<Terrain>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -240,6 +324,7 @@ pub fn simulate(
         return;
     }
     let dt = time.delta_secs();
+    let authority = net::is_authority(mode.as_deref(), net.as_deref());
     if let Phase::Resolving(remaining) = game.phase {
         for cannon in &mut game.cannons {
             let ground = terrain
@@ -249,13 +334,22 @@ pub fn simulate(
             cannon.position.y = (cannon.position.y - 10.0 * dt).max(ground);
         }
         if remaining <= dt {
-            game.finish_turn();
+            if authority {
+                game.finish_turn();
+                if let Some(net) = net.as_deref()
+                    && net.is_host()
+                {
+                    net.send(&game.turn_msg());
+                }
+            } else {
+                game.phase = Phase::Resolving(0.0);
+            }
         } else {
             game.phase = Phase::Resolving(remaining - dt);
         }
         return;
     }
-    if game.phase != Phase::Flying {
+    if !authority || game.phase != Phase::Flying {
         return;
     }
     let Some(mut ball) = game.ball else {
@@ -300,6 +394,17 @@ pub fn simulate(
         game.effects.push(Effect::Blast(point));
         game.ball = None;
         game.phase = Phase::Resolving(1.5);
+        if let Some(net) = net.as_deref()
+            && net.is_host()
+        {
+            net.send(&Msg::Impact {
+                point,
+                damage,
+                health: game.health(),
+                cannon_y: game.cannon_y(),
+                direct: direct.is_some(),
+            });
+        }
     } else if ball.age > MAX_FLIGHT
         || ball.position.y < -20.0
         || ball.position.x.abs() > game.size.half() + 15.0
@@ -308,6 +413,13 @@ pub fn simulate(
         game.ball = None;
         game.phase = Phase::Resolving(0.8);
         game.message = "Out of bounds. Adjust your aim and power next turn.".into();
+        if let Some(net) = net.as_deref()
+            && net.is_host()
+        {
+            net.send(&Msg::Miss {
+                cannon_y: game.cannon_y(),
+            });
+        }
     } else {
         if game
             .trail
@@ -400,7 +512,7 @@ mod tests {
         let game = app.world().resource::<Game>();
         assert_eq!(
             (game.size, game.next_size, game.seed),
-            (MapSize::Large, MapSize::Large, seed)
+            (MapSize::Large, MapSize::Medium, seed)
         );
         assert_eq!(game.wind, wind);
         assert_eq!(game.cannons.map(|c| c.position), positions);
