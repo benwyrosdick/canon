@@ -78,6 +78,7 @@ pub enum MenuAction {
     Host,
     Join,
     Back,
+    QuitToMenu,
 }
 
 pub fn is_authority(mode: Option<&PlayMode>, net: Option<&Net>) -> bool {
@@ -384,14 +385,21 @@ pub fn menu_input(
     if *mode == PlayMode::Online && !net.as_ref().is_some_and(|net| net.waiting) {
         return;
     }
-    if *mode == PlayMode::Local {
-        return;
-    }
     let mut action = None;
     for (interaction, pressed) in &buttons {
         if *interaction == Interaction::Pressed {
             action = Some(*pressed);
         }
+    }
+    if *mode == PlayMode::Local {
+        if game.paused
+            && (action == Some(MenuAction::QuitToMenu) || keys.just_pressed(KeyCode::Tab))
+        {
+            *mode = PlayMode::Menu;
+            game.paused = true;
+            menu.status.clear();
+        }
+        return;
     }
     if keys.just_pressed(KeyCode::Escape) {
         action = Some(MenuAction::Back);
@@ -405,7 +413,8 @@ pub fn menu_input(
         }
         Some(MenuAction::Host) => {
             let code = RoomCode::random(crate::game::fresh_seed());
-            menu.status = format!("Connecting to {}...", menu.relay);
+            menu.join_code = code.as_str();
+            menu.status = format!("Share this code. Connecting to {}...", menu.relay);
             connect(&mut commands, Hello::Host(code), menu.relay.clone(), code);
             *mode = PlayMode::Menu;
             game.paused = true;
@@ -423,10 +432,11 @@ pub fn menu_input(
         Some(MenuAction::Back) => {
             commands.remove_resource::<Net>();
             menu.status.clear();
+            menu.join_code.clear();
             *mode = PlayMode::Menu;
             game.paused = true;
         }
-        None => {}
+        Some(MenuAction::QuitToMenu) | None => {}
     }
     if net.is_some() {
         return;

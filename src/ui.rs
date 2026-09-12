@@ -24,7 +24,6 @@ pub enum Label {
     Map,
     NextMap,
     MenuStatus,
-    JoinCode,
 }
 #[derive(Component)]
 pub struct HealthFill(usize);
@@ -32,6 +31,10 @@ pub struct HealthFill(usize);
 pub struct MenuRoot;
 #[derive(Component)]
 pub struct HostOnly;
+#[derive(Component)]
+pub struct CodeSlot(usize);
+#[derive(Component)]
+pub struct CodeGlyph(usize);
 
 fn text(value: &str, size: f32, color: Color) -> impl Bundle {
     (
@@ -79,8 +82,14 @@ pub fn setup(mut commands: Commands) {
                 }
             });
         });
-        screen.spawn((Node { align_self: AlignSelf::Center, padding: UiRect::all(px(22)), ..default() }, BackgroundColor(INK.with_alpha(0.94)), BorderRadius::all(px(14)), Visibility::Hidden, Label::Pause))
-            .with_children(|panel| { panel.spawn(text("PAUSED\nEsc to resume", 28.0, PAPER)); });
+        screen.spawn((Node { align_self: AlignSelf::Center, padding: UiRect::all(px(28)), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: px(14), border: UiRect::all(px(2)), ..default() }, BackgroundColor(INK), BorderColor::all(GOLD), BorderRadius::all(px(16)), Visibility::Hidden, Label::Pause))
+            .with_children(|panel| {
+                panel.spawn(text("PAUSED", 28.0, PAPER));
+                panel.spawn(text("Esc to resume", 14.0, MUTED));
+                panel.spawn((Button, MenuAction::QuitToMenu, Node { padding: UiRect::axes(px(22), px(12)), ..default() }, BackgroundColor(Color::srgb(0.18, 0.25, 0.28)), BorderRadius::all(px(8)))).with_children(|button| {
+                    button.spawn(text("MAIN MENU / TAB", 16.0, PAPER));
+                });
+            });
         screen.spawn(Node { flex_direction: FlexDirection::Column, row_gap: px(10), ..default() }).with_children(|bottom| {
             bottom.spawn((Node { align_self: AlignSelf::Center, padding: UiRect::axes(px(20), px(10)), ..default() }, BackgroundColor(INK.with_alpha(0.87)), BorderRadius::all(px(10)))).with_children(|banner| {
                 banner.spawn((text("", 16.0, PAPER), Label::Message));
@@ -101,7 +110,7 @@ pub fn setup(mut commands: Commands) {
                     });
                 });
                 panel.spawn(text("A / D  Aim     W / S  Elevation     Q / E  Power     Shift  Fine tune     Space  Fire", 14.0, MUTED));
-                panel.spawn(text("Right-drag  Orbit     Scroll  Zoom     C  Overview     Esc  Pause     M  Sound     Shift + R  Replay map", 13.0, MUTED));
+                panel.spawn(text("Right-drag  Orbit     Scroll  Zoom     C  Overview     Esc  Pause     Tab  Menu     M  Sound     Shift + R  Replay map", 13.0, MUTED));
             });
         });
     });
@@ -141,6 +150,37 @@ pub fn setup(mut commands: Commands) {
                     menu.spawn((text("", 16.0, GOLD), Label::MenuStatus));
                     menu.spawn(Node {
                         column_gap: px(12),
+                        margin: UiRect::vertical(px(8)),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        for i in 0..4 {
+                            row.spawn((
+                                CodeSlot(i),
+                                Node {
+                                    width: px(72),
+                                    height: px(88),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border: UiRect::all(px(2)),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.08, 0.12, 0.14)),
+                                BorderColor::all(Color::srgb(0.35, 0.42, 0.40)),
+                                BorderRadius::all(px(10)),
+                            ))
+                            .with_children(|cell| {
+                                cell.spawn((CodeGlyph(i), text("", 42.0, GOLD)));
+                            });
+                        }
+                    });
+                    menu.spawn(text(
+                        "Type a room code, then Join. Hosting fills these boxes for the other player.",
+                        14.0,
+                        MUTED,
+                    ));
+                    menu.spawn(Node {
+                        column_gap: px(12),
                         ..default()
                     })
                     .with_children(|row| {
@@ -176,12 +216,6 @@ pub fn setup(mut commands: Commands) {
                             });
                         }
                     });
-                    menu.spawn((text("JOIN CODE: ____", 18.0, PAPER), Label::JoinCode));
-                    menu.spawn(text(
-                        "Type a 4-character code, then Join. Host shares the code after connecting.",
-                        14.0,
-                        MUTED,
-                    ));
                     menu.spawn(text(
                         "Online uses 192.241.147.149:3478   --relay=host:port to override",
                         13.0,
@@ -191,7 +225,7 @@ pub fn setup(mut commands: Commands) {
         });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update(
     game: Res<Game>,
     mode: Option<Res<PlayMode>>,
@@ -202,7 +236,9 @@ pub fn update(
     mut pause: Query<(&Label, &mut Visibility), (Without<MenuRoot>, Without<HostOnly>)>,
     mut menu_root: Query<&mut Visibility, (With<MenuRoot>, Without<HostOnly>)>,
     mut host_only: Query<&mut Visibility, (With<HostOnly>, Without<MenuRoot>, Without<Label>)>,
-    mut buttons: Query<(&Action, &Interaction, &mut BackgroundColor)>,
+    mut buttons: Query<(&Action, &Interaction, &mut BackgroundColor), Without<CodeSlot>>,
+    mut glyphs: Query<(&CodeGlyph, &mut Text), Without<Label>>,
+    mut slots: Query<(&CodeSlot, &mut BackgroundColor, &mut BorderColor), Without<Action>>,
 ) {
     let online = mode.as_deref() == Some(&PlayMode::Online);
     let waiting = net.as_ref().is_some_and(|net| net.waiting);
@@ -302,7 +338,7 @@ pub fn update(
                         game.message.clone()
                     }
                 } else if game.paused {
-                    "Simulation paused. Press Esc to resume.".into()
+                    "Paused. Esc resumes. Tab or Main Menu returns to the title screen.".into()
                 } else if game.phase == Phase::Handoff {
                     format!(
                         "{}  Pass to {player} and press Enter when ready.",
@@ -322,12 +358,6 @@ pub fn update(
                     }
                 })
                 .unwrap_or_default(),
-            Label::JoinCode => format!(
-                "JOIN CODE: {:<4}",
-                menu.as_ref()
-                    .map(|menu| menu.join_code.as_str())
-                    .unwrap_or("")
-            ),
             Label::Primary => {
                 if game.paused {
                     "PAUSED / ESC".into()
@@ -378,5 +408,35 @@ pub fn update(
             }
             Action::SelectSize(_) => Color::srgb(0.18, 0.25, 0.28),
         };
+    }
+    let displayed = net
+        .as_ref()
+        .map(|net| net.code.as_str())
+        .or_else(|| menu.as_ref().map(|menu| menu.join_code.clone()))
+        .unwrap_or_default();
+    let chars: Vec<char> = displayed.chars().collect();
+    let cursor = chars.len().min(4);
+    for (glyph, mut text) in &mut glyphs {
+        let value = chars
+            .get(glyph.0)
+            .map(|ch| ch.to_string())
+            .unwrap_or_default();
+        if text.0 != value {
+            text.0 = value;
+        }
+    }
+    for (slot, mut background, mut border) in &mut slots {
+        let filled = slot.0 < chars.len();
+        let active = slot.0 == cursor && cursor < 4 && net.is_none();
+        background.0 = if filled {
+            Color::srgb(0.18, 0.14, 0.06)
+        } else {
+            Color::srgb(0.08, 0.12, 0.14)
+        };
+        *border = BorderColor::all(if filled || active {
+            GOLD
+        } else {
+            Color::srgb(0.35, 0.42, 0.40)
+        });
     }
 }

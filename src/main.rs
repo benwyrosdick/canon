@@ -130,6 +130,7 @@ fn boot_net(mut commands: Commands, boot: Option<Res<BootNet>>, mut menu: ResMut
     let Some(boot) = boot else {
         return;
     };
+    menu.join_code = boot.code.as_str();
     menu.status = format!("Connecting to {} ({})...", boot.relay, boot.code.as_str());
     net::connect(&mut commands, boot.hello, boot.relay.clone(), boot.code);
 }
