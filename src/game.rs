@@ -300,7 +300,7 @@ pub fn input(
         (cannon.power + axis(KeyCode::KeyE, KeyCode::KeyQ) * dt * 14.0).clamp(15.0, 52.0);
     if online && let Some(net) = net.as_deref_mut() {
         net.aim_timer += time.delta_secs();
-        if net.aim_timer >= 1.0 / 15.0 {
+        if net.aim_timer >= 1.0 / 30.0 {
             net.aim_timer = 0.0;
             net.send(&Msg::Aim {
                 yaw: cannon.yaw,
@@ -349,13 +349,24 @@ pub fn simulate(
         }
         return;
     }
-    if !authority || game.phase != Phase::Flying {
+    if game.phase != Phase::Flying {
         return;
     }
     let Some(mut ball) = game.ball else {
         return;
     };
     let old = ball.step(dt, game.wind);
+    if !authority {
+        if game
+            .trail
+            .last()
+            .is_none_or(|p| p.distance(ball.position) > 0.7)
+        {
+            game.trail.push(ball.position);
+        }
+        game.ball = Some(ball);
+        return;
+    }
     let mut hit = terrain.sweep(old, ball.position).map(|t| (t, None));
     for (i, cannon) in game.cannons.iter().enumerate() {
         if let Some(t) = segment_sphere(old, ball.position, cannon.position, CANNON_RADIUS + 0.28)

@@ -51,6 +51,10 @@ pub struct Net {
     pub waiting: bool,
     pub aim_timer: f32,
     ball_timer: f32,
+    remote_yaw: f32,
+    remote_elevation: f32,
+    remote_power: f32,
+    has_remote_aim: bool,
 }
 
 impl Net {
@@ -99,6 +103,10 @@ pub fn connect(commands: &mut Commands, hello: Hello, relay: String, code: RoomC
         waiting: true,
         aim_timer: 0.0,
         ball_timer: 0.0,
+        remote_yaw: 0.0,
+        remote_elevation: 0.0,
+        remote_power: 32.0,
+        has_remote_aim: false,
     });
 }
 
@@ -218,10 +226,16 @@ fn apply(
             elevation,
             power,
         } => {
-            let cannon = &mut game.cannons[1 - net.seat];
-            cannon.yaw = yaw;
-            cannon.elevation = elevation;
-            cannon.power = power;
+            net.remote_yaw = yaw;
+            net.remote_elevation = elevation;
+            net.remote_power = power;
+            if !net.has_remote_aim {
+                let cannon = &mut game.cannons[1 - net.seat];
+                cannon.yaw = yaw;
+                cannon.elevation = elevation;
+                cannon.power = power;
+                net.has_remote_aim = true;
+            }
         }
         Msg::Ready if net.is_host() && game.active != net.seat && game.phase == Phase::Handoff => {
             game.phase = Phase::Aiming;
@@ -255,13 +269,17 @@ fn apply(
             cannon.yaw = yaw;
             cannon.elevation = elevation;
             cannon.power = power;
+            net.remote_yaw = yaw;
+            net.remote_elevation = elevation;
+            net.remote_power = power;
+            net.has_remote_aim = true;
             game.paused = false;
             game.fire();
         }
         Msg::Ball { position, velocity } if !net.is_host() => {
             if let Some(ball) = &mut game.ball {
-                ball.position = position;
-                ball.velocity = velocity;
+                ball.position = ball.position.lerp(position, 0.2);
+                ball.velocity = ball.velocity.lerp(velocity, 0.2);
             }
         }
         Msg::Impact {
@@ -325,6 +343,26 @@ fn apply(
         }
         _ => {}
     }
+}
+
+pub fn smooth(time: Res<Time>, net: Option<Res<Net>>, mut game: ResMut<Game>) {
+    let Some(net) = net else {
+        return;
+    };
+    if net.waiting || !net.has_remote_aim {
+        return;
+    }
+    let blend = 1.0 - (-16.0 * time.delta_secs()).exp();
+    let cannon = &mut game.cannons[1 - net.seat];
+    cannon.yaw = lerp_angle(cannon.yaw, net.remote_yaw, blend);
+    cannon.elevation += (net.remote_elevation - cannon.elevation) * blend;
+    cannon.power += (net.remote_power - cannon.power) * blend;
+}
+
+fn lerp_angle(from: f32, to: f32, t: f32) -> f32 {
+    let delta =
+        (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+    (from + delta * t).rem_euclid(std::f32::consts::TAU)
 }
 
 pub fn menu_input(

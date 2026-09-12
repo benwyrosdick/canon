@@ -93,6 +93,7 @@ fn main() {
             (
                 net::menu_input,
                 net::pump,
+                net::smooth,
                 game::input,
                 visuals::sync_environment,
                 windsock::update,
