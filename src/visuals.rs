@@ -21,6 +21,16 @@ pub struct Projectile;
 pub struct Battlefield;
 #[derive(Component)]
 pub struct Water;
+#[derive(Component)]
+pub struct CannonPart(usize);
+#[derive(Component)]
+pub struct Debris {
+    velocity: Vec3,
+    spin: Vec3,
+    owner: usize,
+}
+#[derive(Resource, Default)]
+pub struct Wrecks(pub [bool; 2]);
 
 #[derive(Component)]
 pub struct Particle {
@@ -123,11 +133,13 @@ pub fn setup(
                     Mesh3d(body_mesh.clone()),
                     MeshMaterial3d(color.clone()),
                     Transform::default(),
+                    CannonPart(i),
                 ));
                 root.spawn((
                     Mesh3d(dome_mesh.clone()),
                     MeshMaterial3d(color),
                     Transform::from_xyz(0.0, 0.35, 0.0).with_scale(Vec3::new(1.0, 0.7, 1.0)),
+                    CannonPart(i),
                 ));
                 for x in [-1.35, 1.35] {
                     for z in [-0.75, 0.75] {
@@ -137,11 +149,13 @@ pub fn setup(
                             Mesh3d(wheel_mesh.clone()),
                             MeshMaterial3d(dark.clone()),
                             transform,
+                            CannonPart(i),
                         ));
                         root.spawn((
                             Mesh3d(hub_mesh.clone()),
                             MeshMaterial3d(brass.clone()),
                             transform,
+                            CannonPart(i),
                         ));
                     }
                 }
@@ -155,16 +169,19 @@ pub fn setup(
                         Mesh3d(barrel_mesh.clone()),
                         MeshMaterial3d(metal.clone()),
                         Transform::from_xyz(0.0, 1.5, 0.0),
+                        CannonPart(i),
                     ));
                     pivot.spawn((
                         Mesh3d(ring_mesh.clone()),
                         MeshMaterial3d(brass.clone()),
                         Transform::from_xyz(0.0, 2.85, 0.0),
+                        CannonPart(i),
                     ));
                     pivot.spawn((
                         Mesh3d(hole_mesh.clone()),
                         MeshMaterial3d(dark.clone()),
                         Transform::from_xyz(0.0, 3.012, 0.0),
+                        CannonPart(i),
                     ));
                 });
             });
@@ -200,6 +217,7 @@ pub fn setup(
         rng: Rng::new(game.seed),
         smoke_clock: 0.0,
     });
+    commands.insert_resource(Wrecks::default());
 }
 
 pub fn sync_environment(
@@ -223,23 +241,25 @@ pub fn sync_environment(
 
 pub fn sync_cannons(
     game: Res<Game>,
+    wrecks: Res<Wrecks>,
     mut roots: Query<(&CannonRoot, &mut Transform)>,
     mut barrels: Query<(&Barrel, &mut Transform), Without<CannonRoot>>,
     mut gizmos: Gizmos,
 ) {
     for (root, mut transform) in &mut roots {
-        let cannon = game.cannons[root.0];
-        transform.translation = cannon.position;
-        transform.rotation = if cannon.health <= 0.0 {
-            Quat::from_rotation_z(0.55)
-        } else {
-            Quat::IDENTITY
-        };
+        if wrecks.0[root.0] {
+            continue;
+        }
+        transform.translation = game.cannons[root.0].position;
+        transform.rotation = Quat::IDENTITY;
     }
     for (barrel, mut transform) in &mut barrels {
+        if wrecks.0[barrel.0] || game.cannons[barrel.0].health <= 0.0 {
+            continue;
+        }
         transform.rotation = Quat::from_rotation_arc(Vec3::Y, game.cannons[barrel.0].direction());
     }
-    if game.phase == Phase::Aiming {
+    if game.phase == Phase::Aiming && game.cannons[game.active].health > 0.0 {
         let cannon = game.cannons[game.active];
         let color = if game.active == 0 { RED } else { BLUE };
         gizmos.arrow(
@@ -261,6 +281,115 @@ pub fn sync_cannons(
             game.trail.iter().copied(),
             Color::srgba(1.0, 0.92, 0.70, 0.5),
         );
+    }
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn wreck_cannons(
+    mut commands: Commands,
+    game: Res<Game>,
+    mut wrecks: ResMut<Wrecks>,
+    mut art: ResMut<Art>,
+    mut roots: Query<(&CannonRoot, &mut Visibility)>,
+    parts: Query<(
+        &CannonPart,
+        &GlobalTransform,
+        &Mesh3d,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
+    debris: Query<(Entity, &Debris)>,
+) {
+    for i in 0..2 {
+        let dead = game.cannons[i].health <= 0.0;
+        if dead && !wrecks.0[i] {
+            wrecks.0[i] = true;
+            let origin = game.cannons[i].position;
+            for (part, global, mesh, material) in &parts {
+                if part.0 != i {
+                    continue;
+                }
+                let (scale, rotation, translation) = global.to_scale_rotation_translation();
+                let outward = (translation - origin).normalize_or_zero();
+                let velocity = outward * art.rng.range(5.0, 12.0)
+                    + Vec3::Y * art.rng.range(4.0, 9.0)
+                    + Vec3::new(art.rng.range(-1.0, 1.0), 0.0, art.rng.range(-1.0, 1.0)) * 3.0;
+                let spin = Vec3::new(
+                    art.rng.range(-8.0, 8.0),
+                    art.rng.range(-8.0, 8.0),
+                    art.rng.range(-8.0, 8.0),
+                );
+                commands.spawn((
+                    Mesh3d(mesh.0.clone()),
+                    MeshMaterial3d(material.0.clone()),
+                    Transform {
+                        translation,
+                        rotation,
+                        scale,
+                    },
+                    Debris {
+                        velocity,
+                        spin,
+                        owner: i,
+                    },
+                ));
+            }
+            for (root, mut visibility) in &mut roots {
+                if root.0 == i {
+                    *visibility = Visibility::Hidden;
+                }
+            }
+        } else if !dead && wrecks.0[i] {
+            wrecks.0[i] = false;
+            for (entity, piece) in &debris {
+                if piece.owner == i {
+                    commands.entity(entity).despawn();
+                }
+            }
+            for (root, mut visibility) in &mut roots {
+                if root.0 == i {
+                    *visibility = Visibility::Visible;
+                }
+            }
+        }
+    }
+}
+
+pub fn animate_debris(
+    game: Res<Game>,
+    terrain: Res<Terrain>,
+    time: Res<Time>,
+    mut debris: Query<(&mut Transform, &mut Debris)>,
+) {
+    if game.paused {
+        return;
+    }
+    let dt = time.delta_secs().min(0.05);
+    for (mut transform, mut piece) in &mut debris {
+        if piece.velocity.length_squared() < 0.04 && piece.spin.length_squared() < 0.04 {
+            continue;
+        }
+        piece.velocity.y -= 18.0 * dt;
+        transform.translation += piece.velocity * dt;
+        let spin = piece.spin.length();
+        if spin > 0.05 {
+            transform.rotation =
+                Quat::from_axis_angle(piece.spin.normalize(), spin * dt) * transform.rotation;
+        }
+        let ground = terrain
+            .height(transform.translation.x, transform.translation.z)
+            .unwrap_or(FLOOR)
+            + 0.15;
+        if transform.translation.y < ground {
+            transform.translation.y = ground;
+            piece.velocity.y *= -0.28;
+            piece.velocity.x *= 0.55;
+            piece.velocity.z *= 0.55;
+            piece.spin *= 0.5;
+            if piece.velocity.length() < 0.8 {
+                piece.velocity = Vec3::ZERO;
+                piece.spin = Vec3::ZERO;
+            }
+        }
     }
 }
 

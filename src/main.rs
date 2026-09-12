@@ -98,6 +98,8 @@ fn main() {
                 visuals::sync_environment,
                 windsock::update,
                 visuals::sync_cannons,
+                visuals::wreck_cannons,
+                visuals::animate_debris,
                 visuals::projectile,
                 visuals::effects,
                 visuals::animate_particles,
