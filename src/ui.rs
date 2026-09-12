@@ -167,7 +167,7 @@ pub fn setup(mut commands: Commands) {
                 MUTED,
             ));
             menu.spawn(text(
-                "Online needs canon-relay. Default 127.0.0.1:3478   --relay=host:port",
+                "Online uses 192.241.147.149:3478   --relay=host:port to override",
                 13.0,
                 MUTED,
             ));

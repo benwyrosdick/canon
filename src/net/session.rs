@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use super::{
     client::{self, Incoming, Link},
     protocol::Msg,
-    wire::{Hello, RoomCode, error_text},
+    wire::{Hello, PING, RoomCode, error_text},
 };
 use crate::{
     game::{Effect, Game, Phase},
@@ -11,7 +11,7 @@ use crate::{
     terrain::Terrain,
 };
 
-pub const DEFAULT_RELAY: &str = "127.0.0.1:3478";
+pub const DEFAULT_RELAY: &str = "192.241.147.149:3478";
 
 #[derive(Resource, Clone, Debug, PartialEq, Eq)]
 pub enum PlayMode {
@@ -50,6 +50,7 @@ pub struct Net {
     pub code: RoomCode,
     pub waiting: bool,
     pub aim_timer: f32,
+    ping_timer: f32,
     ball_timer: f32,
     remote_yaw: f32,
     remote_elevation: f32,
@@ -102,6 +103,7 @@ pub fn connect(commands: &mut Commands, hello: Hello, relay: String, code: RoomC
         code,
         waiting: true,
         aim_timer: 0.0,
+        ping_timer: 0.0,
         ball_timer: 0.0,
         remote_yaw: 0.0,
         remote_elevation: 0.0,
@@ -180,6 +182,11 @@ pub fn pump(
                 drop_net = true;
             }
         }
+    }
+    net.ping_timer += time.delta_secs();
+    if net.ping_timer >= 10.0 {
+        net.ping_timer = 0.0;
+        net.link.send_bytes(&[PING]);
     }
     if *mode == PlayMode::Online && !net.waiting && net.is_host() && game.phase == Phase::Flying {
         net.ball_timer += time.delta_secs();

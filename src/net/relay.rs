@@ -8,7 +8,7 @@ use std::{
 
 use super::wire::{
     self, ERR_BUSY, ERR_EXISTS, ERR_FULL, ERR_MISSING, ERROR, Hello, JOINED, PEER_JOINED,
-    PEER_LEFT, RoomCode,
+    PEER_LEFT, PING, PONG, RoomCode,
 };
 
 const MAX_ROOMS: usize = 64;
@@ -72,10 +72,10 @@ fn handle(stream: TcpStream, hub: Arc<Mutex<Hub>>) -> io::Result<()> {
         Hello::Host(code) => (code, true),
         Hello::Guest(code) => (code, false),
     };
-    let rx = {
+    let (rx, echo) = {
         let mut hub = hub.lock().expect("relay hub");
         match register(&mut hub, code, as_host) {
-            Ok(rx) => rx,
+            Ok(pair) => pair,
             Err(code) => {
                 let _ = reply(&writer, &[ERROR, code]);
                 return Ok(());
@@ -97,10 +97,12 @@ fn handle(stream: TcpStream, hub: Arc<Mutex<Hub>>) -> io::Result<()> {
     let result = (|| -> io::Result<()> {
         loop {
             let frame = wire::read_frame(&mut reader)?;
-            let Some(peer) = hub.lock().expect("relay hub").other(code, as_host) else {
-                continue;
-            };
-            if peer.send(frame).is_err() {
+            if frame.first() == Some(&PING) {
+                let _ = echo.send(vec![PONG]);
+            }
+            if let Some(peer) = hub.lock().expect("relay hub").other(code, as_host)
+                && peer.send(frame).is_err()
+            {
                 break;
             }
         }
@@ -121,8 +123,11 @@ fn reply(mut stream: &TcpStream, payload: &[u8]) -> io::Result<()> {
     wire::write_frame(&mut stream, payload)
 }
 
-fn register(hub: &mut Hub, code: RoomCode, as_host: bool) -> Result<mpsc::Receiver<Vec<u8>>, u8> {
+type Mail = (mpsc::Receiver<Vec<u8>>, mpsc::Sender<Vec<u8>>);
+
+fn register(hub: &mut Hub, code: RoomCode, as_host: bool) -> Result<Mail, u8> {
     let (tx, rx) = mpsc::channel();
+    let echo = tx.clone();
     if as_host {
         if hub.rooms.contains_key(&code) {
             return Err(ERR_EXISTS);
@@ -137,7 +142,7 @@ fn register(hub: &mut Hub, code: RoomCode, as_host: bool) -> Result<mpsc::Receiv
                 guest: None,
             },
         );
-        Ok(rx)
+        Ok((rx, echo))
     } else {
         let Some(room) = hub.rooms.get_mut(&code) else {
             return Err(ERR_MISSING);
@@ -146,7 +151,7 @@ fn register(hub: &mut Hub, code: RoomCode, as_host: bool) -> Result<mpsc::Receiv
             return Err(ERR_FULL);
         }
         room.guest = Some(Slot { tx });
-        Ok(rx)
+        Ok((rx, echo))
     }
 }
 
@@ -208,6 +213,22 @@ mod tests {
         assert_eq!(reply[1], ERR_FULL);
         host.shutdown(Shutdown::Both).ok();
         assert_eq!(read_frame(&mut guest).unwrap(), vec![PEER_LEFT]);
+    }
+
+    #[test]
+    fn ping_is_answered_while_waiting_and_forwarded_to_peer() {
+        let addr = start();
+        let code = RoomCode(*b"P2NG");
+        let mut host = join(addr, Hello::Host(code));
+        assert_eq!(read_frame(&mut host).unwrap(), vec![JOINED, 0]);
+        write_frame(&mut host, &[PING]).unwrap();
+        assert_eq!(read_frame(&mut host).unwrap(), vec![PONG]);
+        let mut guest = join(addr, Hello::Guest(code));
+        assert_eq!(read_frame(&mut guest).unwrap(), vec![JOINED, 1]);
+        assert_eq!(read_frame(&mut host).unwrap(), vec![PEER_JOINED]);
+        write_frame(&mut host, &[PING]).unwrap();
+        assert_eq!(read_frame(&mut host).unwrap(), vec![PONG]);
+        assert_eq!(read_frame(&mut guest).unwrap(), vec![PING]);
     }
 
     #[test]

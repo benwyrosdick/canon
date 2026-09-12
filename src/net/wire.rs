@@ -9,6 +9,8 @@ pub const JOINED: u8 = b'Y';
 pub const ERROR: u8 = b'E';
 pub const PEER_JOINED: u8 = b'+';
 pub const PEER_LEFT: u8 = b'-';
+pub const PING: u8 = b'P';
+pub const PONG: u8 = b'Q';
 
 pub const ERR_EXISTS: u8 = 1;
 pub const ERR_MISSING: u8 = 2;

@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use super::wire::{self, ERROR, Hello, JOINED, PEER_JOINED, PEER_LEFT};
+use super::wire::{self, ERROR, Hello, JOINED, PEER_JOINED, PEER_LEFT, PING, PONG};
 
 pub enum Incoming {
     Joined { seat: u8 },
@@ -87,6 +87,7 @@ fn drive(
     loop {
         let frame = wire::read_frame(&mut reader)?;
         let event = match frame.first().copied() {
+            Some(PING | PONG) => continue,
             Some(PEER_JOINED) => Incoming::PeerJoined,
             Some(PEER_LEFT) => Incoming::PeerLeft,
             Some(ERROR) if frame.len() >= 2 => Incoming::Error(frame[1]),

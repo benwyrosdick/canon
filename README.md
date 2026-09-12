@@ -41,22 +41,22 @@ Default listen address is `0.0.0.0:3478`. Pass `127.0.0.1:3478` or `0.0.0.0:9000
 
 Then each player:
 
-1. Run `cargo run --locked`.
+1. Run `cargo run --locked` (connects to `192.241.147.149:3478` by default).
 2. **Host** creates a 4-character room code (no `0/O/1/I`). Share that code.
 3. **Join** types the code and clicks Join.
 4. Host is Red. Guest is Blue. Only the active player can aim and fire.
 5. Host only: New Map / size. Pause is disabled online.
 
+Override the relay with `--relay=host:port`:
+
 ```sh
 # Two windows on one computer
 cargo run --locked --bin canon-relay
-cargo run --locked -- --host --seed=42
-cargo run --locked -- --join=THECODE
+cargo run --locked -- --relay=127.0.0.1:3478 --host --seed=42
+cargo run --locked -- --relay=127.0.0.1:3478 --join=THECODE
 ```
 
-Point both games at a remote relay with `--relay=YOUR.SERVER.IP:3478`.
 Players only need outbound TCP; no port-forwarding on their routers.
-Open TCP 3478 on the VPS. Room codes are enough after that.
 
 If the other player disconnects, both return to the menu.
 
