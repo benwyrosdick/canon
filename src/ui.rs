@@ -124,7 +124,7 @@ pub fn update(
                 }
             }
             Label::Aim => format!(
-                "Bearing {:05.1}°   /   Elevation {:04.1}°   /   Power {:04.1} m/s",
+                "Bearing {:05.1} deg  /  Elevation {:04.1} deg  /  Power {:04.1} m/s",
                 (cannon.yaw.to_degrees() + 90.0).rem_euclid(360.0),
                 cannon.elevation.to_degrees(),
                 cannon.power
@@ -133,7 +133,12 @@ pub fn update(
                 "WIND  {:.1} m/s toward {compass}\nShared for both turns this round",
                 game.wind.length()
             ),
-            Label::Round => format!("ROUND {:02}  /  LOCAL DUEL", game.round),
+            Label::Round => format!(
+                "ROUND {:02}  /  SOUND {}\nSEED {}",
+                game.round,
+                if game.muted { "OFF" } else { "ON" },
+                game.seed
+            ),
             Label::Health(i) => format!("{:.0} HP", game.cannons[*i].health.ceil()),
             Label::Message => {
                 if game.paused {

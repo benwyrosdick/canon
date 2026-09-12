@@ -47,7 +47,10 @@ impl Terrain {
                 )
             })
             .collect();
-        let phases = [rng.range(0.0, 6.28), rng.range(0.0, 6.28)];
+        let phases = [
+            rng.range(0.0, std::f32::consts::TAU),
+            rng.range(0.0, std::f32::consts::TAU),
+        ];
         let height = |p: Vec2| {
             let mut h =
                 3.0 + (p.x * 0.075 + phases[0]).sin() * 1.8 + (p.y * 0.09 + phases[1]).cos() * 1.5;
@@ -125,6 +128,9 @@ impl Terrain {
         let mut normals = Vec::new();
         let mut colors = Vec::new();
         let mut triangle = |points: [Vec3; 3], color: [f32; 4]| {
+            // Vertex colors are linear, while our art palette is authored in sRGB.
+            let linear = Color::srgba(color[0], color[1], color[2], color[3]).to_linear();
+            let color = [linear.red, linear.green, linear.blue, linear.alpha];
             let normal = (points[1] - points[0])
                 .cross(points[2] - points[0])
                 .normalize();
@@ -174,8 +180,8 @@ impl Terrain {
             ] {
                 let low_a = Vec3::new(a.x, FLOOR - 3.0, a.z);
                 let low_b = Vec3::new(b.x, FLOOR - 3.0, b.z);
-                triangle([a, b, low_a], [0.20, 0.13, 0.08, 1.0]);
-                triangle([b, low_b, low_a], [0.20, 0.13, 0.08, 1.0]);
+                triangle([a, low_a, b], [0.20, 0.13, 0.08, 1.0]);
+                triangle([b, low_a, low_b], [0.20, 0.13, 0.08, 1.0]);
             }
         }
         Mesh::new(

@@ -1,6 +1,7 @@
 mod camera;
 mod game;
 mod physics;
+mod smoke;
 mod sound;
 mod terrain;
 mod ui;
@@ -18,8 +19,8 @@ fn main() {
         .unwrap_or_else(game::fresh_seed);
     let terrain = terrain::Terrain::new(seed);
     let game = game::Game::new(seed, &terrain);
-    App::new()
-        .insert_resource(ClearColor(Color::srgb(0.57, 0.73, 0.80)))
+    let mut app = App::new();
+    app.insert_resource(ClearColor(Color::srgb(0.57, 0.73, 0.80)))
         .insert_resource(AmbientLight {
             color: Color::srgb(0.80, 0.88, 1.0),
             brightness: 450.0,
@@ -53,6 +54,9 @@ fn main() {
                 ui::update,
             )
                 .chain(),
-        )
-        .run();
+        );
+    if std::env::args().any(|arg| arg == "--smoke-test") {
+        app.add_systems(Update, smoke::run.after(ui::update));
+    }
+    app.run();
 }

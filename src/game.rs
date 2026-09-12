@@ -315,6 +315,82 @@ pub fn simulate(
 mod tests {
     use super::*;
 
+    fn simulation_app() -> App {
+        let mut app = App::new();
+        let mut terrain = Terrain::new(42);
+        let mut meshes = Assets::<Mesh>::default();
+        terrain.mesh = meshes.add(terrain.build_mesh());
+        let game = Game::new(42, &terrain);
+        let mut time = Time::<Fixed>::from_hz(120.0);
+        time.advance_by(std::time::Duration::from_secs_f64(1.0 / 120.0));
+        app.insert_resource(time)
+            .insert_resource(terrain)
+            .insert_resource(meshes)
+            .insert_resource(game)
+            .add_systems(Update, simulate);
+        app
+    }
+
+    #[test]
+    fn direct_hit_deforms_ground_settles_cannon_and_ends_match_once() {
+        let mut app = simulation_app();
+        let target = app.world().resource::<Game>().cannons[1].position;
+        {
+            let mut game = app.world_mut().resource_mut::<Game>();
+            game.phase = Phase::Flying;
+            game.ball = Some(Ball {
+                position: target + Vec3::new(-4.0, 0.5, 0.0),
+                velocity: Vec3::X * 1000.0,
+                age: 0.0,
+            });
+        }
+        app.update();
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.cannons[1].health, 0.0);
+        assert_eq!(game.cannons[0].health, 100.0);
+        assert!(game.ball.is_none());
+        assert_eq!(game.effects.len(), 1);
+        assert!(
+            app.world()
+                .resource::<Terrain>()
+                .height(target.x, target.z)
+                .unwrap()
+                < target.y - 2.0
+        );
+        for _ in 0..200 {
+            app.update();
+        }
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.phase, Phase::Finished(Some(0)));
+        assert_eq!(game.effects.len(), 1);
+        assert!(game.cannons[1].position.y < target.y);
+    }
+
+    #[test]
+    fn pause_freezes_shot_and_miss_hands_off_without_damage() {
+        let mut app = simulation_app();
+        {
+            let mut game = app.world_mut().resource_mut::<Game>();
+            game.phase = Phase::Flying;
+            game.paused = true;
+            game.ball = Some(Ball {
+                position: Vec3::new(HALF + 20.0, 100.0, 0.0),
+                velocity: Vec3::X * 30.0,
+                age: 0.0,
+            });
+        }
+        app.update();
+        assert_eq!(app.world().resource::<Game>().ball.unwrap().age, 0.0);
+        app.world_mut().resource_mut::<Game>().paused = false;
+        for _ in 0..110 {
+            app.update();
+        }
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.phase, Phase::Handoff);
+        assert_eq!(game.active, 1);
+        assert!(game.cannons.iter().all(|c| c.health == 100.0));
+    }
+
     #[test]
     fn turns_require_ready_and_wind_is_shared_for_a_round() {
         let terrain = Terrain::new(1);

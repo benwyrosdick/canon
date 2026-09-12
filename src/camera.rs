@@ -75,7 +75,7 @@ pub fn update(
     let horizontal = Vec3::new(cannon.yaw.cos(), 0.0, cannon.yaw.sin());
     let overview = rig.overview || matches!(game.phase, Phase::Handoff | Phase::Finished(_));
     let (target, offset) = if overview {
-        (Vec3::new(0.0, 6.0, 0.0), Vec3::new(-75.0, 92.0, 120.0))
+        (Vec3::ZERO, Vec3::new(-92.0, 115.0, 150.0))
     } else if let Some(ball) = game.ball {
         let travel = Vec3::new(ball.velocity.x, 0.0, ball.velocity.z).normalize_or_zero();
         (
@@ -91,7 +91,7 @@ pub fn update(
             rig.pitch.sin(),
             rig.yaw.sin() * rig.pitch.cos(),
         ) * rig.radius;
-        (cannon.position + horizontal * 14.0, offset)
+        (cannon.position + horizontal * 6.0, offset)
     };
     let desired = target + offset;
     let blend = 1.0 - (-5.0 * time.delta_secs()).exp();
