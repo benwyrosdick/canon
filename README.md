@@ -60,6 +60,84 @@ Open TCP 3478 on the VPS. Room codes are enough after that.
 
 If the other player disconnects, both return to the menu.
 
+#### Docker
+
+The relay image does **not** compile Bevy. It builds `canon-relay` with `--no-default-features`.
+
+```sh
+docker compose up --build -d
+docker compose logs -f
+```
+
+Equivalent:
+
+```sh
+docker build -t canon-relay .
+docker run --rm -p 3478:3478 --read-only --cap-drop ALL canon-relay
+```
+
+Listen address is `0.0.0.0:3478` by default. Override with `CANON_RELAY_ADDR`, `CANON_RELAY_HOST` / `CANON_RELAY_PORT`, or a command argument (`docker run ... canon-relay 0.0.0.0:9000`).
+
+#### GitHub Container Registry
+
+Pushing to `main` (or a `v*` tag) publishes `ghcr.io/<your-user>/canon-relay` via `.github/workflows/relay-image.yml`. The workflow uses `GITHUB_TOKEN`; no extra secrets.
+
+1. Create a GitHub repo and push this project (Actions must be allowed).
+2. After the first successful **Relay image** run, open **Packages** on GitHub, select `canon-relay`, and set visibility to **Public** if you want unauthenticated pulls. Link the package to the repo if GitHub asks.
+3. Pull and run:
+
+```sh
+docker pull ghcr.io/YOUR_GITHUB_USER/canon-relay:latest
+docker run --rm -p 3478:3478 --read-only --cap-drop ALL ghcr.io/YOUR_GITHUB_USER/canon-relay:latest
+```
+
+Private packages need `echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin` first. Image names on GHCR are lowercase.
+
+On a Droplet you can skip building from source:
+
+```sh
+docker run -d --name canon-relay --restart unless-stopped \
+  -p 3478:3478 --read-only --cap-drop ALL \
+  ghcr.io/YOUR_GITHUB_USER/canon-relay:latest
+```
+
+#### Digital Ocean (Droplet)
+
+App Platform is HTTP-oriented; this relay is raw TCP, so use a **Droplet**.
+
+1. Create a Ubuntu 24.04 Droplet. The $6/mo Regular (1 vCPU, 1 GB) is enough. Pick a region close to both players. Add your SSH key. Enable a **Reserved IP** if you want a stable address.
+2. In Networking → Firewalls, allow **SSH (22)** and **TCP 3478** from `0.0.0.0/0` (and `::/0` if you use IPv6).
+3. SSH in and install Docker:
+
+```sh
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# log out and back in
+```
+
+4. Prefer pulling the GitHub image (no Rust toolchain on the droplet):
+
+```sh
+docker run -d --name canon-relay --restart unless-stopped \
+  -p 3478:3478 --read-only --cap-drop ALL \
+  ghcr.io/YOUR_GITHUB_USER/canon-relay:latest
+```
+
+Or copy this repo and build on the droplet: `git clone YOUR_REPO canon && cd canon && docker compose up --build -d`.
+`docker compose ps` / `docker ps` should show the container healthy once TCP 3478 accepts connections.
+
+5. Players run:
+
+```sh
+cargo run --locked -- --relay=DROPLET_IP:3478
+```
+
+Replace `DROPLET_IP` with the Droplet IPv4 or Reserved IP. No TLS in v1; the protocol is not encrypted. For friends-only play that is usually acceptable. To add TLS later, put a TCP proxy (Caddy, nginx stream, or DO load balancer) in front and still forward 3478.
+
+Rebuild after relay changes: `docker compose up --build -d`.
+
+Logs: `docker compose logs -f relay`. Stop: `docker compose down`.
+
 ### Map sizes
 
 | Size | Battlefield | Terrain grid |
@@ -182,6 +260,7 @@ and initial shot settings are in `game.rs`.
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
+cargo test --locked --no-default-features --bin canon-relay --lib
 ```
 
 Run an automated graphics smoke test (requires a desktop display):

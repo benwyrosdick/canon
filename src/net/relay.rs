@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io,
+    io::{self, Write},
     net::{TcpListener, TcpStream, ToSocketAddrs},
     sync::{Arc, Mutex, mpsc},
     thread,
@@ -37,7 +37,8 @@ impl Hub {
 
 pub fn run(addr: impl ToSocketAddrs) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
-    eprintln!("canon-relay listening on {}", listener.local_addr()?);
+    println!("canon-relay bound {}", listener.local_addr()?);
+    let _ = io::stdout().flush();
     serve(listener)
 }
 

@@ -1,0 +1,17 @@
+services:
+  relay:
+    build: .
+    # After GitHub publishes the image, you can drop `build:` and use:
+    # image: ghcr.io/YOUR_GITHUB_USER/canon-relay:latest
+    image: canon-relay:local
+    container_name: canon-relay
+    restart: unless-stopped
+    ports:
+      - "3478:3478"
+    environment:
+      CANON_RELAY_ADDR: 0.0.0.0:3478
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

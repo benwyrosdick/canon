@@ -1,10 +1,20 @@
-pub mod camera;
-pub mod game;
 pub mod net;
+
+#[cfg(feature = "game")]
+pub mod camera;
+#[cfg(feature = "game")]
+pub mod game;
+#[cfg(feature = "game")]
 pub mod physics;
+#[cfg(feature = "game")]
 pub mod smoke;
+#[cfg(feature = "game")]
 pub mod sound;
+#[cfg(feature = "game")]
 pub mod terrain;
+#[cfg(feature = "game")]
 pub mod ui;
+#[cfg(feature = "game")]
 pub mod visuals;
+#[cfg(feature = "game")]
 pub mod windsock;
