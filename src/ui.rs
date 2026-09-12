@@ -58,137 +58,403 @@ fn text(value: &str, size: f32, color: Color) -> impl Bundle {
 }
 
 pub fn setup(mut commands: Commands) {
-    commands.spawn(Node {
-        width: percent(100), height: percent(100), flex_direction: FlexDirection::Column,
-        justify_content: JustifyContent::SpaceBetween, padding: UiRect::all(px(24)), ..default()
-    }).with_children(|screen| {
-        screen.spawn(Node { width: percent(100), justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Start, column_gap: px(18), ..default() }).with_children(|top| {
-            top.spawn((Node { flex_direction: FlexDirection::Column, padding: UiRect::all(px(20)), row_gap: px(6), width: px(290), ..default() }, BackgroundColor(INK.with_alpha(0.93)), BorderRadius::all(px(14)))).with_children(|brand| {
-                brand.spawn(text("3D CANON", 34.0, PAPER));
-                brand.spawn(text("W I N D  &  W A R F A R E", 12.0, GOLD));
-                brand.spawn((text("", 14.0, MUTED), Label::Round));
-                brand.spawn((text("", 15.0, PAPER), Label::Wind));
-                brand.spawn((text("", 14.0, GOLD), Label::Map));
-                brand.spawn((text("NEXT MAP SIZE", 12.0, MUTED), HostOnly));
-                brand.spawn((HostOnly, Node { column_gap: px(5), ..default() })).with_children(|sizes| {
-                    for size in MapSize::ALL {
-                        sizes.spawn((Button, Action::SelectSize(size), Node { padding: UiRect::axes(px(9), px(9)), ..default() }, BackgroundColor(INK), BorderRadius::all(px(6)))).with_children(|button| {
-                            button.spawn(text(size.label(), 13.0, PAPER));
-                        });
-                    }
-                });
-                brand.spawn((text("", 12.0, MUTED), Label::NextMap));
-            });
-            top.spawn(Node { column_gap: px(12), ..default() }).with_children(|players| {
-                for i in 0..2 {
-                    let color = if i == 0 { RED } else { BLUE };
-                    players.spawn((Node { width: px(180), padding: UiRect::all(px(16)), flex_direction: FlexDirection::Column, row_gap: px(10), ..default() }, BackgroundColor(INK.with_alpha(0.93)), BorderRadius::all(px(14)))).with_children(|card| {
-                        card.spawn(text(if i == 0 { "01 / RED" } else { "02 / BLUE" }, 16.0, color));
-                        card.spawn((text("100 HP", 25.0, PAPER), Label::Health(i)));
-                        card.spawn((Node { width: percent(100), height: px(5), ..default() }, BackgroundColor(Color::srgb(0.17, 0.22, 0.25)))).with_children(|track| {
-                            track.spawn((HealthFill(i), Node { width: percent(100), height: percent(100), ..default() }, BackgroundColor(color)));
-                        });
+    commands
+        .spawn(Node {
+            width: percent(100),
+            height: percent(100),
+            flex_direction: FlexDirection::Column,
+            justify_content: JustifyContent::SpaceBetween,
+            padding: UiRect::all(px(24)),
+            ..default()
+        })
+        .with_children(|screen| {
+            screen
+                .spawn(Node {
+                    width: percent(100),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Start,
+                    column_gap: px(18),
+                    ..default()
+                })
+                .with_children(|top| {
+                    top.spawn((
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(px(20)),
+                            row_gap: px(6),
+                            width: px(290),
+                            ..default()
+                        },
+                        BackgroundColor(INK.with_alpha(0.93)),
+                        BorderRadius::all(px(14)),
+                    ))
+                    .with_children(|brand| {
+                        brand.spawn(text("3D CANON", 34.0, PAPER));
+                        brand.spawn(text("W I N D  &  W A R F A R E", 12.0, GOLD));
+                        brand.spawn((text("", 14.0, MUTED), Label::Round));
+                        brand.spawn((text("", 15.0, PAPER), Label::Wind));
+                        brand.spawn((text("", 14.0, GOLD), Label::Map));
+                        brand.spawn((text("NEXT MAP SIZE", 12.0, MUTED), HostOnly));
+                        brand
+                            .spawn((
+                                HostOnly,
+                                Node {
+                                    column_gap: px(5),
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|sizes| {
+                                for size in MapSize::ALL {
+                                    sizes
+                                        .spawn((
+                                            Button,
+                                            Action::SelectSize(size),
+                                            Node {
+                                                padding: UiRect::axes(px(9), px(9)),
+                                                ..default()
+                                            },
+                                            BackgroundColor(INK),
+                                            BorderRadius::all(px(6)),
+                                        ))
+                                        .with_children(|button| {
+                                            button.spawn(text(size.label(), 13.0, PAPER));
+                                        });
+                                }
+                            });
+                        brand.spawn((text("", 12.0, MUTED), Label::NextMap));
                     });
-                }
-            });
-        });
-        screen.spawn((Node { align_self: AlignSelf::Center, padding: UiRect::all(px(28)), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: px(14), border: UiRect::all(px(2)), ..default() }, BackgroundColor(INK), BorderColor::all(GOLD), BorderRadius::all(px(16)), Visibility::Hidden, Label::Pause))
-            .with_children(|panel| {
-                panel.spawn(text("PAUSED", 28.0, PAPER));
-                panel.spawn(text("Esc to resume", 14.0, MUTED));
-                panel.spawn((Button, MenuAction::QuitToMenu, Node { padding: UiRect::axes(px(22), px(12)), ..default() }, BackgroundColor(Color::srgb(0.18, 0.25, 0.28)), BorderRadius::all(px(8)))).with_children(|button| {
-                    button.spawn(text("MAIN MENU / TAB", 16.0, PAPER));
-                });
-            });
-        screen.spawn(Node { flex_direction: FlexDirection::Column, row_gap: px(10), ..default() }).with_children(|bottom| {
-            bottom.spawn((Node { align_self: AlignSelf::Center, padding: UiRect::axes(px(20), px(10)), ..default() }, BackgroundColor(INK.with_alpha(0.87)), BorderRadius::all(px(10)))).with_children(|banner| {
-                banner.spawn((text("", 16.0, PAPER), Label::Message));
-            });
-            bottom.spawn((Node { padding: UiRect::all(px(20)), flex_direction: FlexDirection::Column, row_gap: px(12), ..default() }, BackgroundColor(INK.with_alpha(0.95)), BorderRadius::all(px(14)))).with_children(|panel| {
-                panel.spawn(Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, column_gap: px(20), ..default() }).with_children(|row| {
-                    row.spawn(Node { flex_direction: FlexDirection::Column, row_gap: px(8), flex_grow: 1.0, ..default() }).with_children(|stats| {
-                        stats.spawn((text("", 26.0, GOLD), Label::Status));
-                    });
-                    row.spawn(Node { column_gap: px(14), align_items: AlignItems::Center, ..default() }).with_children(|gauges| {
-                        gauges.spawn(Node { flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: px(4), ..default() }).with_children(|scope_wrap| {
-                            scope_wrap.spawn((text("", 13.0, GOLD), Label::Elevation));
-                            scope_wrap.spawn(Node {
-                                width: px(168),
-                                height: px(112),
-                                position_type: PositionType::Relative,
-                                border: UiRect::all(px(1)),
-                                overflow: Overflow::visible(),
+                    top.spawn(Node {
+                        flex_grow: 1.0,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Start,
+                        padding: UiRect::horizontal(px(8)),
+                        ..default()
+                    })
+                    .with_children(|mid| {
+                        mid.spawn((
+                            Node {
+                                padding: UiRect::axes(px(20), px(10)),
+                                max_width: px(520),
                                 ..default()
-                            }).with_children(|scope| {
-                                scope.spawn((
-                                    Node { width: percent(100), height: percent(100), ..default() },
-                                    BackgroundColor(Color::srgb(0.07, 0.10, 0.11)),
-                                ));
-                                scope.spawn((
-                                    AimWidget::Horizontal,
-                                    Node {
-                                        position_type: PositionType::Absolute,
-                                        left: px(0),
-                                        width: percent(100),
-                                        height: px(2),
-                                        bottom: percent(50),
-                                        ..default()
-                                    },
-                                    BackgroundColor(GOLD.with_alpha(0.85)),
-                                ));
-                                scope.spawn((
-                                    AimWidget::Vertical,
-                                    Node {
-                                        position_type: PositionType::Absolute,
-                                        top: px(0),
-                                        height: percent(100),
-                                        width: px(2),
-                                        left: percent(50),
-                                        ..default()
-                                    },
-                                    BackgroundColor(GOLD.with_alpha(0.85)),
-                                ));
-                                scope.spawn((
-                                    AimWidget::Pip,
-                                    Node {
-                                        position_type: PositionType::Absolute,
-                                        width: px(8),
-                                        height: px(8),
-                                        left: percent(50),
-                                        bottom: percent(50),
-                                        margin: UiRect::axes(px(-3), px(-3)),
-                                        border: UiRect::all(px(1)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(PAPER),
-                                    BorderColor::all(GOLD),
-                                    BorderRadius::all(px(8)),
-                                ));
-                            });
-                            scope_wrap.spawn((text("", 13.0, GOLD), Label::Bearing));
-                        });
-                        gauges.spawn(Node { flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: px(6), ..default() }).with_children(|power| {
-                            power.spawn(text("PWR", 11.0, MUTED));
-                            power.spawn((Node { width: px(16), height: px(112), padding: UiRect::all(px(2)), flex_direction: FlexDirection::Column, justify_content: JustifyContent::End, ..default() }, BackgroundColor(Color::srgb(0.17, 0.22, 0.25)), BorderRadius::all(px(4)))).with_children(|track| {
-                                track.spawn((PowerFill, Node { width: percent(100), height: percent(50), ..default() }, BackgroundColor(GOLD), BorderRadius::all(px(3))));
-                            });
-                            power.spawn((text("", 12.0, PAPER), Label::Power));
+                            },
+                            BackgroundColor(INK.with_alpha(0.87)),
+                            BorderRadius::all(px(10)),
+                        ))
+                        .with_children(|banner| {
+                            banner.spawn((text("", 16.0, PAPER), Label::Message));
                         });
                     });
-                    row.spawn(Node { column_gap: px(10), ..default() }).with_children(|buttons| {
-                        buttons.spawn((Button, Action::Primary, Node { padding: UiRect::axes(px(24), px(16)), ..default() }, BackgroundColor(GOLD), BorderRadius::all(px(8)))).with_children(|button| {
-                            button.spawn((text("READY / ENTER", 16.0, INK), Label::Primary));
-                        });
-                        buttons.spawn((Button, Action::Restart, HostOnly, Node { padding: UiRect::axes(px(18), px(16)), ..default() }, BackgroundColor(Color::srgb(0.18, 0.25, 0.28)), BorderRadius::all(px(8)))).with_children(|button| {
-                            button.spawn(text("NEW MAP / R", 16.0, PAPER));
-                        });
+                    top.spawn(Node {
+                        column_gap: px(12),
+                        ..default()
+                    })
+                    .with_children(|players| {
+                        for i in 0..2 {
+                            let color = if i == 0 { RED } else { BLUE };
+                            players
+                                .spawn((
+                                    Node {
+                                        width: px(180),
+                                        padding: UiRect::all(px(16)),
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: px(10),
+                                        ..default()
+                                    },
+                                    BackgroundColor(INK.with_alpha(0.93)),
+                                    BorderRadius::all(px(14)),
+                                ))
+                                .with_children(|card| {
+                                    card.spawn(text(
+                                        if i == 0 { "01 / RED" } else { "02 / BLUE" },
+                                        16.0,
+                                        color,
+                                    ));
+                                    card.spawn((text("100 HP", 25.0, PAPER), Label::Health(i)));
+                                    card.spawn((
+                                        Node {
+                                            width: percent(100),
+                                            height: px(5),
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgb(0.17, 0.22, 0.25)),
+                                    ))
+                                    .with_children(|track| {
+                                        track.spawn((
+                                            HealthFill(i),
+                                            Node {
+                                                width: percent(100),
+                                                height: percent(100),
+                                                ..default()
+                                            },
+                                            BackgroundColor(color),
+                                        ));
+                                    });
+                                });
+                        }
                     });
                 });
-                panel.spawn(text("A / D  Aim     W / S  Elevation     Q / E  Power     Shift  Fine tune     Space  Fire", 14.0, MUTED));
-                panel.spawn(text("Right-drag  Orbit     Scroll  Zoom     C  Overview     Esc  Pause     Tab  Menu     M  Sound     Shift + R  Replay map", 13.0, MUTED));
-            });
+            screen
+                .spawn((
+                    Node {
+                        align_self: AlignSelf::Center,
+                        padding: UiRect::all(px(28)),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: px(14),
+                        border: UiRect::all(px(2)),
+                        ..default()
+                    },
+                    BackgroundColor(INK),
+                    BorderColor::all(GOLD),
+                    BorderRadius::all(px(16)),
+                    Visibility::Hidden,
+                    Label::Pause,
+                ))
+                .with_children(|panel| {
+                    panel.spawn(text("PAUSED", 28.0, PAPER));
+                    panel.spawn(text("Esc to resume", 14.0, MUTED));
+                    panel
+                        .spawn((
+                            Button,
+                            MenuAction::QuitToMenu,
+                            Node {
+                                padding: UiRect::axes(px(22), px(12)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.18, 0.25, 0.28)),
+                            BorderRadius::all(px(8)),
+                        ))
+                        .with_children(|button| {
+                            button.spawn(text("MAIN MENU / TAB", 16.0, PAPER));
+                        });
+                });
+            screen
+                .spawn(Node {
+                    width: percent(100),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::End,
+                    column_gap: px(12),
+                    ..default()
+                })
+                .with_children(|dock| {
+                    dock.spawn((
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(px(14)),
+                            row_gap: px(3),
+                            ..default()
+                        },
+                        BackgroundColor(INK.with_alpha(0.95)),
+                        BorderRadius::all(px(14)),
+                    ))
+                    .with_children(|keys| {
+                        for line in [
+                            "A / D        Aim",
+                            "W / S        Elevation",
+                            "Q / E        Power",
+                            "Shift        Fine tune",
+                            "Space        Fire",
+                            "Right-drag   Orbit",
+                            "Scroll       Zoom",
+                            "C            Overview",
+                            "Esc          Pause",
+                            "Tab          Menu",
+                            "M            Sound",
+                            "Shift + R    Replay map",
+                        ] {
+                            keys.spawn(text(line, 13.0, MUTED));
+                        }
+                    });
+                    dock.spawn(Node {
+                        column_gap: px(12),
+                        align_items: AlignItems::End,
+                        ..default()
+                    })
+                    .with_children(|right| {
+                        right
+                            .spawn((
+                                Node {
+                                    flex_direction: FlexDirection::Column,
+                                    justify_content: JustifyContent::Center,
+                                    padding: UiRect::all(px(16)),
+                                    min_width: px(200),
+                                    ..default()
+                                },
+                                BackgroundColor(INK.with_alpha(0.95)),
+                                BorderRadius::all(px(14)),
+                            ))
+                            .with_children(|turn| {
+                                turn.spawn((text("", 22.0, GOLD), Label::Status));
+                            });
+                        right
+                            .spawn((
+                                Node {
+                                    flex_direction: FlexDirection::Row,
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect::all(px(12)),
+                                    column_gap: px(12),
+                                    ..default()
+                                },
+                                BackgroundColor(INK.with_alpha(0.95)),
+                                BorderRadius::all(px(14)),
+                            ))
+                            .with_children(|gauges| {
+                                gauges
+                                    .spawn(Node {
+                                        flex_direction: FlexDirection::Column,
+                                        align_items: AlignItems::Center,
+                                        row_gap: px(4),
+                                        ..default()
+                                    })
+                                    .with_children(|scope_wrap| {
+                                        scope_wrap.spawn((text("", 13.0, GOLD), Label::Elevation));
+                                        scope_wrap
+                                            .spawn(Node {
+                                                width: px(168),
+                                                height: px(112),
+                                                position_type: PositionType::Relative,
+                                                border: UiRect::all(px(1)),
+                                                overflow: Overflow::visible(),
+                                                ..default()
+                                            })
+                                            .with_children(|scope| {
+                                                scope.spawn((
+                                                    Node {
+                                                        width: percent(100),
+                                                        height: percent(100),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(Color::srgb(0.07, 0.10, 0.11)),
+                                                ));
+                                                scope.spawn((
+                                                    AimWidget::Horizontal,
+                                                    Node {
+                                                        position_type: PositionType::Absolute,
+                                                        left: px(0),
+                                                        width: percent(100),
+                                                        height: px(2),
+                                                        bottom: percent(50),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(GOLD.with_alpha(0.85)),
+                                                ));
+                                                scope.spawn((
+                                                    AimWidget::Vertical,
+                                                    Node {
+                                                        position_type: PositionType::Absolute,
+                                                        top: px(0),
+                                                        height: percent(100),
+                                                        width: px(2),
+                                                        left: percent(50),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(GOLD.with_alpha(0.85)),
+                                                ));
+                                                scope.spawn((
+                                                    AimWidget::Pip,
+                                                    Node {
+                                                        position_type: PositionType::Absolute,
+                                                        width: px(8),
+                                                        height: px(8),
+                                                        left: percent(50),
+                                                        bottom: percent(50),
+                                                        margin: UiRect::axes(px(-3), px(-3)),
+                                                        border: UiRect::all(px(1)),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(PAPER),
+                                                    BorderColor::all(GOLD),
+                                                    BorderRadius::all(px(8)),
+                                                ));
+                                            });
+                                        scope_wrap.spawn((text("", 13.0, GOLD), Label::Bearing));
+                                    });
+                                gauges
+                                    .spawn(Node {
+                                        flex_direction: FlexDirection::Column,
+                                        align_items: AlignItems::Center,
+                                        row_gap: px(6),
+                                        ..default()
+                                    })
+                                    .with_children(|power| {
+                                        power.spawn(text("PWR", 11.0, MUTED));
+                                        power
+                                            .spawn((
+                                                Node {
+                                                    width: px(16),
+                                                    height: px(112),
+                                                    padding: UiRect::all(px(2)),
+                                                    flex_direction: FlexDirection::Column,
+                                                    justify_content: JustifyContent::End,
+                                                    ..default()
+                                                },
+                                                BackgroundColor(Color::srgb(0.17, 0.22, 0.25)),
+                                                BorderRadius::all(px(4)),
+                                            ))
+                                            .with_children(|track| {
+                                                track.spawn((
+                                                    PowerFill,
+                                                    Node {
+                                                        width: percent(100),
+                                                        height: percent(50),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(GOLD),
+                                                    BorderRadius::all(px(3)),
+                                                ));
+                                            });
+                                        power.spawn((text("", 12.0, PAPER), Label::Power));
+                                    });
+                            });
+                        right
+                            .spawn((
+                                Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8),
+                                    padding: UiRect::all(px(14)),
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(INK.with_alpha(0.95)),
+                                BorderRadius::all(px(14)),
+                            ))
+                            .with_children(|buttons| {
+                                buttons
+                                    .spawn((
+                                        Button,
+                                        Action::Primary,
+                                        Node {
+                                            padding: UiRect::axes(px(22), px(14)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(GOLD),
+                                        BorderRadius::all(px(8)),
+                                    ))
+                                    .with_children(|button| {
+                                        button.spawn((
+                                            text("READY / ENTER", 16.0, INK),
+                                            Label::Primary,
+                                        ));
+                                    });
+                                buttons
+                                    .spawn((
+                                        Button,
+                                        Action::Restart,
+                                        HostOnly,
+                                        Node {
+                                            padding: UiRect::axes(px(18), px(14)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgb(0.18, 0.25, 0.28)),
+                                        BorderRadius::all(px(8)),
+                                    ))
+                                    .with_children(|button| {
+                                        button.spawn(text("NEW MAP / R", 16.0, PAPER));
+                                    });
+                            });
+                    });
+                });
         });
-    });
     commands
         .spawn((
             MenuRoot,
@@ -291,11 +557,6 @@ pub fn setup(mut commands: Commands) {
                             });
                         }
                     });
-                    menu.spawn(text(
-                        "Online uses 192.241.147.149:3478   --relay=host:port to override",
-                        13.0,
-                        MUTED,
-                    ));
                 });
         });
 }
