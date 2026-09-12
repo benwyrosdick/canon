@@ -14,7 +14,9 @@ const MUTED: Color = Color::srgb(0.62, 0.73, 0.75);
 #[derive(Component)]
 pub enum Label {
     Status,
-    Aim,
+    Bearing,
+    Elevation,
+    Power,
     Wind,
     Round,
     Health(usize),
@@ -35,6 +37,14 @@ pub struct HostOnly;
 pub struct CodeSlot(usize);
 #[derive(Component)]
 pub struct CodeGlyph(usize);
+#[derive(Component)]
+pub enum AimWidget {
+    Vertical,
+    Horizontal,
+    Pip,
+}
+#[derive(Component)]
+pub struct PowerFill;
 
 fn text(value: &str, size: f32, color: Color) -> impl Bundle {
     (
@@ -96,9 +106,74 @@ pub fn setup(mut commands: Commands) {
             });
             bottom.spawn((Node { padding: UiRect::all(px(20)), flex_direction: FlexDirection::Column, row_gap: px(12), ..default() }, BackgroundColor(INK.with_alpha(0.95)), BorderRadius::all(px(14)))).with_children(|panel| {
                 panel.spawn(Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, column_gap: px(20), ..default() }).with_children(|row| {
-                    row.spawn(Node { flex_direction: FlexDirection::Column, row_gap: px(8), ..default() }).with_children(|stats| {
+                    row.spawn(Node { flex_direction: FlexDirection::Column, row_gap: px(8), flex_grow: 1.0, ..default() }).with_children(|stats| {
                         stats.spawn((text("", 26.0, GOLD), Label::Status));
-                        stats.spawn((text("", 18.0, PAPER), Label::Aim));
+                    });
+                    row.spawn(Node { column_gap: px(14), align_items: AlignItems::Center, ..default() }).with_children(|gauges| {
+                        gauges.spawn(Node { flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: px(4), ..default() }).with_children(|scope_wrap| {
+                            scope_wrap.spawn((text("", 13.0, GOLD), Label::Elevation));
+                            scope_wrap.spawn(Node {
+                                width: px(168),
+                                height: px(112),
+                                position_type: PositionType::Relative,
+                                border: UiRect::all(px(1)),
+                                overflow: Overflow::visible(),
+                                ..default()
+                            }).with_children(|scope| {
+                                scope.spawn((
+                                    Node { width: percent(100), height: percent(100), ..default() },
+                                    BackgroundColor(Color::srgb(0.07, 0.10, 0.11)),
+                                ));
+                                scope.spawn((
+                                    AimWidget::Horizontal,
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: px(0),
+                                        width: percent(100),
+                                        height: px(2),
+                                        bottom: percent(50),
+                                        ..default()
+                                    },
+                                    BackgroundColor(GOLD.with_alpha(0.85)),
+                                ));
+                                scope.spawn((
+                                    AimWidget::Vertical,
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        top: px(0),
+                                        height: percent(100),
+                                        width: px(2),
+                                        left: percent(50),
+                                        ..default()
+                                    },
+                                    BackgroundColor(GOLD.with_alpha(0.85)),
+                                ));
+                                scope.spawn((
+                                    AimWidget::Pip,
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        width: px(8),
+                                        height: px(8),
+                                        left: percent(50),
+                                        bottom: percent(50),
+                                        margin: UiRect::axes(px(-3), px(-3)),
+                                        border: UiRect::all(px(1)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(PAPER),
+                                    BorderColor::all(GOLD),
+                                    BorderRadius::all(px(8)),
+                                ));
+                            });
+                            scope_wrap.spawn((text("", 13.0, GOLD), Label::Bearing));
+                        });
+                        gauges.spawn(Node { flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: px(6), ..default() }).with_children(|power| {
+                            power.spawn(text("PWR", 11.0, MUTED));
+                            power.spawn((Node { width: px(16), height: px(112), padding: UiRect::all(px(2)), flex_direction: FlexDirection::Column, justify_content: JustifyContent::End, ..default() }, BackgroundColor(Color::srgb(0.17, 0.22, 0.25)), BorderRadius::all(px(4)))).with_children(|track| {
+                                track.spawn((PowerFill, Node { width: percent(100), height: percent(50), ..default() }, BackgroundColor(GOLD), BorderRadius::all(px(3))));
+                            });
+                            power.spawn((text("", 12.0, PAPER), Label::Power));
+                        });
                     });
                     row.spawn(Node { column_gap: px(10), ..default() }).with_children(|buttons| {
                         buttons.spawn((Button, Action::Primary, Node { padding: UiRect::axes(px(24), px(16)), ..default() }, BackgroundColor(GOLD), BorderRadius::all(px(8)))).with_children(|button| {
@@ -232,7 +307,9 @@ pub fn update(
     menu: Option<Res<Menu>>,
     net: Option<Res<Net>>,
     mut labels: Query<(&Label, &mut Text, &mut TextColor)>,
-    mut health: Query<(&HealthFill, &mut Node)>,
+    mut health: Query<(&HealthFill, &mut Node), (Without<PowerFill>, Without<AimWidget>)>,
+    mut power_fill: Query<&mut Node, (With<PowerFill>, Without<HealthFill>, Without<AimWidget>)>,
+    mut aim: Query<(&AimWidget, &mut Node), (Without<HealthFill>, Without<PowerFill>)>,
     mut pause: Query<(&Label, &mut Visibility), (Without<MenuRoot>, Without<HostOnly>)>,
     mut menu_root: Query<&mut Visibility, (With<MenuRoot>, Without<HostOnly>)>,
     mut host_only: Query<&mut Visibility, (With<HostOnly>, Without<MenuRoot>, Without<Label>)>,
@@ -290,12 +367,12 @@ pub fn update(
                     }
                 }
             }
-            Label::Aim => format!(
-                "Bearing {:05.1} deg  /  Elevation {:04.1} deg  /  Power {:04.1} m/s",
-                (cannon.yaw.to_degrees() + 90.0).rem_euclid(360.0),
-                cannon.elevation.to_degrees(),
-                cannon.power
+            Label::Bearing => format!(
+                "BRG  {:05.1}",
+                (cannon.yaw.to_degrees() + 90.0).rem_euclid(360.0)
             ),
+            Label::Elevation => format!("ELV  {:04.1}", cannon.elevation.to_degrees()),
+            Label::Power => format!("{:.0} m/s", cannon.power),
             Label::Wind => format!(
                 "WIND  {:.1} m/s toward {compass}\nShared for both turns this round",
                 game.wind.length()
@@ -379,6 +456,23 @@ pub fn update(
     }
     for (fill, mut node) in &mut health {
         node.width = percent(game.cannons[fill.0].health);
+    }
+    let bearing_pct =
+        ((cannon.yaw.to_degrees() + 90.0).rem_euclid(360.0) / 360.0 * 100.0).clamp(0.0, 100.0);
+    let elevation_pct = ((cannon.elevation.to_degrees() - 5.0) / 80.0 * 100.0).clamp(0.0, 100.0);
+    let power_pct = ((cannon.power - 15.0) / 37.0 * 100.0).clamp(0.0, 100.0);
+    for (widget, mut node) in &mut aim {
+        match widget {
+            AimWidget::Vertical | AimWidget::Pip => node.left = percent(bearing_pct),
+            AimWidget::Horizontal => {}
+        }
+        match widget {
+            AimWidget::Horizontal | AimWidget::Pip => node.bottom = percent(elevation_pct),
+            AimWidget::Vertical => {}
+        }
+    }
+    for mut node in &mut power_fill {
+        node.height = percent(power_pct);
     }
     for (label, mut visibility) in &mut pause {
         if matches!(label, Label::Pause) {
