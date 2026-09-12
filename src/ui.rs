@@ -30,6 +30,8 @@ pub enum Label {
 pub struct HealthFill(usize);
 #[derive(Component)]
 pub struct MenuRoot;
+#[derive(Component)]
+pub struct HostOnly;
 
 fn text(value: &str, size: f32, color: Color) -> impl Bundle {
     (
@@ -54,8 +56,8 @@ pub fn setup(mut commands: Commands) {
                 brand.spawn((text("", 14.0, MUTED), Label::Round));
                 brand.spawn((text("", 15.0, PAPER), Label::Wind));
                 brand.spawn((text("", 14.0, GOLD), Label::Map));
-                brand.spawn(text("NEXT MAP SIZE", 12.0, MUTED));
-                brand.spawn(Node { column_gap: px(5), ..default() }).with_children(|sizes| {
+                brand.spawn((text("NEXT MAP SIZE", 12.0, MUTED), HostOnly));
+                brand.spawn((HostOnly, Node { column_gap: px(5), ..default() })).with_children(|sizes| {
                     for size in MapSize::ALL {
                         sizes.spawn((Button, Action::SelectSize(size), Node { padding: UiRect::axes(px(9), px(9)), ..default() }, BackgroundColor(INK), BorderRadius::all(px(6)))).with_children(|button| {
                             button.spawn(text(size.label(), 13.0, PAPER));
@@ -93,7 +95,7 @@ pub fn setup(mut commands: Commands) {
                         buttons.spawn((Button, Action::Primary, Node { padding: UiRect::axes(px(24), px(16)), ..default() }, BackgroundColor(GOLD), BorderRadius::all(px(8)))).with_children(|button| {
                             button.spawn((text("READY / ENTER", 16.0, INK), Label::Primary));
                         });
-                        buttons.spawn((Button, Action::Restart, Node { padding: UiRect::axes(px(18), px(16)), ..default() }, BackgroundColor(Color::srgb(0.18, 0.25, 0.28)), BorderRadius::all(px(8)))).with_children(|button| {
+                        buttons.spawn((Button, Action::Restart, HostOnly, Node { padding: UiRect::axes(px(18), px(16)), ..default() }, BackgroundColor(Color::srgb(0.18, 0.25, 0.28)), BorderRadius::all(px(8)))).with_children(|button| {
                             button.spawn(text("NEW MAP / R", 16.0, PAPER));
                         });
                     });
@@ -110,67 +112,82 @@ pub fn setup(mut commands: Commands) {
                 position_type: PositionType::Absolute,
                 width: percent(100),
                 height: percent(100),
-                flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                row_gap: px(16),
                 ..default()
             },
-            BackgroundColor(INK.with_alpha(0.94)),
+            BackgroundColor(Color::srgba(0.02, 0.04, 0.05, 0.78)),
             GlobalZIndex(10),
         ))
-        .with_children(|menu| {
-            menu.spawn(text("3D CANON", 48.0, PAPER));
-            menu.spawn(text("LOCAL OR ONLINE 1V1", 14.0, GOLD));
-            menu.spawn((text("", 16.0, GOLD), Label::MenuStatus));
-            menu.spawn(Node {
-                column_gap: px(12),
-                ..default()
-            })
-            .with_children(|row| {
-                for (action, label) in [
-                    (MenuAction::Local, "LOCAL"),
-                    (MenuAction::Host, "HOST"),
-                    (MenuAction::Join, "JOIN"),
-                ] {
-                    row.spawn((
-                        Button,
-                        action,
-                        Node {
-                            padding: UiRect::axes(px(22), px(14)),
-                            ..default()
-                        },
-                        BackgroundColor(if action == MenuAction::Local {
-                            GOLD
-                        } else {
-                            Color::srgb(0.18, 0.25, 0.28)
-                        }),
-                        BorderRadius::all(px(8)),
-                    ))
-                    .with_children(|button| {
-                        button.spawn(text(
-                            label,
-                            16.0,
-                            if action == MenuAction::Local {
-                                INK
-                            } else {
-                                PAPER
-                            },
-                        ));
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        width: px(560),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::all(px(36)),
+                        row_gap: px(16),
+                        border: UiRect::all(px(2)),
+                        ..default()
+                    },
+                    BackgroundColor(INK),
+                    BorderColor::all(GOLD),
+                    BorderRadius::all(px(18)),
+                ))
+                .with_children(|menu| {
+                    menu.spawn(text("3D CANON", 48.0, PAPER));
+                    menu.spawn(text("LOCAL OR ONLINE 1V1", 14.0, GOLD));
+                    menu.spawn((text("", 16.0, GOLD), Label::MenuStatus));
+                    menu.spawn(Node {
+                        column_gap: px(12),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        for (action, label) in [
+                            (MenuAction::Local, "LOCAL"),
+                            (MenuAction::Host, "HOST"),
+                            (MenuAction::Join, "JOIN"),
+                        ] {
+                            row.spawn((
+                                Button,
+                                action,
+                                Node {
+                                    padding: UiRect::axes(px(22), px(14)),
+                                    ..default()
+                                },
+                                BackgroundColor(if action == MenuAction::Local {
+                                    GOLD
+                                } else {
+                                    Color::srgb(0.18, 0.25, 0.28)
+                                }),
+                                BorderRadius::all(px(8)),
+                            ))
+                            .with_children(|button| {
+                                button.spawn(text(
+                                    label,
+                                    16.0,
+                                    if action == MenuAction::Local {
+                                        INK
+                                    } else {
+                                        PAPER
+                                    },
+                                ));
+                            });
+                        }
                     });
-                }
-            });
-            menu.spawn((text("JOIN CODE: ____", 18.0, PAPER), Label::JoinCode));
-            menu.spawn(text(
-                "Type a 4-character code, then Join. Host shares the code after connecting.",
-                14.0,
-                MUTED,
-            ));
-            menu.spawn(text(
-                "Online uses 192.241.147.149:3478   --relay=host:port to override",
-                13.0,
-                MUTED,
-            ));
+                    menu.spawn((text("JOIN CODE: ____", 18.0, PAPER), Label::JoinCode));
+                    menu.spawn(text(
+                        "Type a 4-character code, then Join. Host shares the code after connecting.",
+                        14.0,
+                        MUTED,
+                    ));
+                    menu.spawn(text(
+                        "Online uses 192.241.147.149:3478   --relay=host:port to override",
+                        13.0,
+                        MUTED,
+                    ));
+                });
         });
 }
 
@@ -182,8 +199,9 @@ pub fn update(
     net: Option<Res<Net>>,
     mut labels: Query<(&Label, &mut Text, &mut TextColor)>,
     mut health: Query<(&HealthFill, &mut Node)>,
-    mut pause: Query<(&Label, &mut Visibility), Without<MenuRoot>>,
-    mut menu_root: Query<&mut Visibility, With<MenuRoot>>,
+    mut pause: Query<(&Label, &mut Visibility), (Without<MenuRoot>, Without<HostOnly>)>,
+    mut menu_root: Query<&mut Visibility, (With<MenuRoot>, Without<HostOnly>)>,
+    mut host_only: Query<&mut Visibility, (With<HostOnly>, Without<MenuRoot>, Without<Label>)>,
     mut buttons: Query<(&Action, &Interaction, &mut BackgroundColor)>,
 ) {
     let online = mode.as_deref() == Some(&PlayMode::Online);
@@ -194,6 +212,14 @@ pub fn update(
             Visibility::Visible
         } else {
             Visibility::Hidden
+        };
+    }
+    let guest = online && net.as_ref().is_some_and(|net| net.seat != 0);
+    for mut visibility in &mut host_only {
+        *visibility = if guest {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
         };
     }
     let mine = net.as_ref().is_some_and(|net| net.my_turn(&game));
@@ -251,7 +277,18 @@ pub fn update(
                 game.size.half() * 2.0,
                 game.size.half() * 2.0
             ),
-            Label::NextMap => format!("{} selected. Apply: New Map / R", game.next_size.label()),
+            Label::NextMap => {
+                if guest {
+                    format!(
+                        "Host selected {} / {:.0} x {:.0} m",
+                        game.size.label(),
+                        game.size.half() * 2.0,
+                        game.size.half() * 2.0
+                    )
+                } else {
+                    format!("{} selected. Apply: New Map / R", game.next_size.label())
+                }
+            }
             Label::Message => {
                 if online {
                     if let Some(net) = net.as_deref() {

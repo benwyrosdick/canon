@@ -1,0 +1,31 @@
+name: macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Apple Silicon app and DMG
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - name: Build app, icon, and disk image
+        run: bash scripts/build-macos.sh
+      - name: Verify package
+        run: |
+          codesign --verify --deep --strict "dist/macos/3D Canon.app"
+          hdiutil verify "dist/macos/3D Canon.dmg"
+      # The DMG preserves the executable permissions and app signature when downloaded.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 3D-Canon-macOS-arm64
+          path: |
+            dist/macos/3D Canon.dmg
+            dist/macos/3D Canon.png
+          if-no-files-found: error
