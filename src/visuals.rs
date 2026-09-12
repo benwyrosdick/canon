@@ -17,6 +17,10 @@ pub struct CannonRoot(usize);
 pub struct Barrel(usize);
 #[derive(Component)]
 pub struct Projectile;
+#[derive(Component)]
+pub struct Battlefield;
+#[derive(Component)]
+pub struct Water;
 
 #[derive(Component)]
 pub struct Particle {
@@ -53,8 +57,10 @@ pub fn setup(
         })),
         Transform::default(),
         Name::new("Destructible island"),
+        Battlefield,
     ));
     commands.spawn((
+        Water,
         Mesh3d(meshes.add(Cuboid::new(450.0, 1.0, 450.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.21, 0.43, 0.51),
@@ -194,6 +200,25 @@ pub fn setup(
         rng: Rng::new(game.seed),
         smoke_clock: 0.0,
     });
+}
+
+pub fn sync_environment(
+    mut commands: Commands,
+    terrain: Res<Terrain>,
+    islands: Query<Entity, With<Battlefield>>,
+    mut water: Query<&mut Transform, With<Water>>,
+) {
+    if terrain.is_changed() {
+        // Bevy caches mesh bounds. Recompute after resizing or cutting a crater.
+        for entity in &islands {
+            commands
+                .entity(entity)
+                .remove::<bevy::camera::primitives::Aabb>();
+        }
+        for mut transform in &mut water {
+            transform.scale = Vec3::new(terrain.size.scale(), 1.0, terrain.size.scale());
+        }
+    }
 }
 
 pub fn sync_cannons(

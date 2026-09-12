@@ -3,7 +3,10 @@ use bevy::{
     prelude::*,
 };
 
-use crate::game::{Game, Phase};
+use crate::{
+    game::{Game, Phase},
+    terrain::MapSize,
+};
 
 #[derive(Resource)]
 pub struct CameraRig {
@@ -11,16 +14,17 @@ pub struct CameraRig {
     pitch: f32,
     radius: f32,
     overview: bool,
-    last_turn: (u64, u32, usize),
+    last_turn: (u64, u32, usize, MapSize),
     pub shake: f32,
 }
 
-pub fn setup(mut commands: Commands) {
+pub fn setup(mut commands: Commands, game: Res<Game>) {
     commands.spawn((
         Camera3d::default(),
         // No lookup textures required: use a tonemapper that is entirely analytic.
         bevy::core_pipeline::tonemapping::Tonemapping::Reinhard,
-        Transform::from_xyz(-95.0, 95.0, 125.0).looking_at(Vec3::new(0.0, 5.0, 0.0), Vec3::Y),
+        Transform::from_translation(Vec3::new(-95.0, 95.0, 125.0) * game.size.scale())
+            .looking_at(Vec3::new(0.0, 5.0, 0.0), Vec3::Y),
         DistanceFog {
             color: Color::srgb(0.57, 0.73, 0.80),
             falloff: FogFalloff::Linear {
@@ -35,7 +39,7 @@ pub fn setup(mut commands: Commands) {
         pitch: 0.42,
         radius: 39.0,
         overview: false,
-        last_turn: (0, 0, 0),
+        last_turn: (0, 0, 0, MapSize::Small),
         shake: 0.0,
     });
 }
@@ -49,13 +53,13 @@ pub fn update(
     motion: Res<AccumulatedMouseMotion>,
     mut scroll: MessageReader<MouseWheel>,
     mut rig: ResMut<CameraRig>,
-    mut cameras: Query<&mut Transform, With<Camera3d>>,
+    mut cameras: Query<(&mut Transform, &mut DistanceFog), With<Camera3d>>,
 ) {
     let wheel: f32 = scroll.read().map(|event| event.y).sum();
     if game.paused {
         return;
     }
-    let turn = (game.seed, game.round, game.active);
+    let turn = (game.seed, game.round, game.active, game.size);
     if rig.last_turn != turn {
         rig.last_turn = turn;
         rig.yaw = game.cannons[game.active].yaw + std::f32::consts::PI;
@@ -75,7 +79,10 @@ pub fn update(
     let horizontal = Vec3::new(cannon.yaw.cos(), 0.0, cannon.yaw.sin());
     let overview = rig.overview || matches!(game.phase, Phase::Handoff | Phase::Finished(_));
     let (target, offset) = if overview {
-        (Vec3::ZERO, Vec3::new(-92.0, 115.0, 150.0))
+        (
+            Vec3::ZERO,
+            Vec3::new(-92.0, 115.0, 150.0) * game.size.scale(),
+        )
     } else if let Some(ball) = game.ball {
         let travel = Vec3::new(ball.velocity.x, 0.0, ball.velocity.z).normalize_or_zero();
         (
@@ -102,7 +109,11 @@ pub fn update(
         0.0,
     ) * rig.shake
         * 0.25;
-    for mut transform in &mut cameras {
+    for (mut transform, mut fog) in &mut cameras {
+        fog.falloff = FogFalloff::Linear {
+            start: 170.0 * game.size.scale(),
+            end: 400.0 * game.size.scale(),
+        };
         transform.translation = transform.translation.lerp(desired, blend);
         let rotation = Transform::from_translation(transform.translation)
             .looking_at(target + shake, Vec3::Y)

@@ -23,6 +23,31 @@ For a repeatable map and wind sequence:
 cargo run --locked -- --seed=42
 ```
 
+### Map sizes
+
+| Size | Battlefield | Terrain grid |
+| --- | --- | --- |
+| **Small (default)** | 120 × 120 m — the original size | 80 × 80 cells |
+| **Medium** | 180 × 180 m | 120 × 120 cells |
+| **Large** | 240 × 240 m | 160 × 160 cells |
+
+Choose **Small**, **Medium**, or **Large** under **Next Map Size** in the upper-left
+HUD, then click **New Map** or press **R** to start a match at that size. The selected
+button is highlighted; the HUD also shows the active map's size and dimensions.
+Selection takes effect on the next new map. **Shift + R** replays the current map's
+size and seed, even if a different next size was selected.
+
+You can also choose the starting size from the command line:
+
+```sh
+cargo run --locked -- --size=large --seed=42
+```
+
+Supported values: `small`, `medium`, `large`. Larger maps space the cannons farther
+apart and increase their initial power setting. The overview, fog, water, and shot
+boundaries adapt to the map. All sizes retain 1.5 m terrain cells and the same crater
+radius, so destruction stays equally detailed.
+
 For an optimized build:
 
 ```sh
@@ -47,7 +72,7 @@ cargo run --release --locked
 
 | Control | Action |
 | --- | --- |
-| A / D | Rotate aim left / right, relative to the behind-cannon view |
+| A / D | Decrease / increase aim bearing |
 | W / S | Raise / lower elevation (5–85°) |
 | Q / E | Decrease / increase power (15–52 m/s) |
 | Hold Shift | Fine aiming and power adjustment |
@@ -57,8 +82,8 @@ cargo run --release --locked
 | C | Toggle overview |
 | Esc | Pause / resume |
 | M | Toggle firing / impact sound |
-| R | Start a fresh randomized match |
-| Shift + R | Restart the same map and wind sequence |
+| R | Start a fresh randomized match at the selected size |
+| Shift + R | Restart the current size, map, and wind sequence |
 
 The HUD displays both health totals, aiming values, seed, round, and wind.
 Compass bearings use **0° north (−Z), 90° east (+X)**. Wind is shown as the direction
@@ -101,7 +126,7 @@ segment against terrain triangles and cannon bounding spheres, resolving the
 earliest contact once. Terrain uses exactly the same triangle heights for rendering,
 collision, and cannon support.
 
-This first version uses an 80×80-cell heightfield and rebuilds its mesh after each
+This first version uses an 80×80, 120×120, or 160×160-cell heightfield and rebuilds its mesh after each
 impact. It supports bowls and trenches, but not caves or overhangs. Cannon support
 and collisions are intentionally simplified rather than full rigid-body physics.
 Gameplay constants live near the top of `physics.rs` and `terrain.rs`; aiming limits
@@ -122,10 +147,12 @@ cargo run --locked -- --seed=42 --smoke-test
 ```
 
 It aims, fires, waits for the shot to resolve, writes `target/smoke-aim.png` and
-`target/smoke-impact.png`, and closes after about 12 seconds of game time.
+`target/smoke-impact.png`, and closes after about 12–15 seconds of game time.
+Add `--size=medium` or `--size=large` to check those sizes too.
 
 Tests cover timestep consistency, wind effects, fast-shot collision, damage falloff,
-terrain repeatability and spawn pads across 100 seeds, crater limits, turn ordering,
+terrain repeatability and spawn pads across 100 seeds for each size, map boundaries,
+size selection and replay behavior, crater limits, turn ordering,
 round wind sharing, pause, misses, and a complete direct-hit/settling/victory sequence.
 
 Manual playtest: play both turns, fire short and long shots, create a crater near a

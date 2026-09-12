@@ -17,7 +17,18 @@ fn main() {
                 .and_then(|s| s.parse::<u64>().ok())
         })
         .unwrap_or_else(game::fresh_seed);
-    let terrain = terrain::Terrain::new(seed);
+    let size = std::env::args()
+        .find_map(|arg| {
+            arg.strip_prefix("--size=")
+                .map(|value| value.parse::<terrain::MapSize>())
+        })
+        .transpose()
+        .unwrap_or_else(|error| {
+            eprintln!("{error}");
+            std::process::exit(2);
+        })
+        .unwrap_or_default();
+    let terrain = terrain::Terrain::new(seed, size);
     let game = game::Game::new(seed, &terrain);
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.57, 0.73, 0.80)))
@@ -46,6 +57,7 @@ fn main() {
             Update,
             (
                 game::input,
+                visuals::sync_environment,
                 visuals::sync_cannons,
                 visuals::projectile,
                 visuals::effects,

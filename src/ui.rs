@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     game::{Action, Game, Phase},
+    terrain::MapSize,
     visuals::{BLUE, GOLD, RED},
 };
 
@@ -19,6 +20,8 @@ pub enum Label {
     Message,
     Primary,
     Pause,
+    Map,
+    NextMap,
 }
 #[derive(Component)]
 pub struct HealthFill(usize);
@@ -45,6 +48,16 @@ pub fn setup(mut commands: Commands) {
                 brand.spawn(text("W I N D  &  W A R F A R E", 12.0, GOLD));
                 brand.spawn((text("", 14.0, MUTED), Label::Round));
                 brand.spawn((text("", 15.0, PAPER), Label::Wind));
+                brand.spawn((text("", 14.0, GOLD), Label::Map));
+                brand.spawn(text("NEXT MAP SIZE", 12.0, MUTED));
+                brand.spawn(Node { column_gap: px(5), ..default() }).with_children(|sizes| {
+                    for size in MapSize::ALL {
+                        sizes.spawn((Button, Action::SelectSize(size), Node { padding: UiRect::axes(px(9), px(9)), ..default() }, BackgroundColor(INK), BorderRadius::all(px(6)))).with_children(|button| {
+                            button.spawn(text(size.label(), 13.0, PAPER));
+                        });
+                    }
+                });
+                brand.spawn((text("", 12.0, MUTED), Label::NextMap));
             });
             top.spawn(Node { column_gap: px(12), ..default() }).with_children(|players| {
                 for i in 0..2 {
@@ -140,6 +153,13 @@ pub fn update(
                 game.seed
             ),
             Label::Health(i) => format!("{:.0} HP", game.cannons[*i].health.ceil()),
+            Label::Map => format!(
+                "{} / {:.0} x {:.0} m",
+                game.size.label(),
+                game.size.half() * 2.0,
+                game.size.half() * 2.0
+            ),
+            Label::NextMap => format!("{} selected. Apply: New Map / R", game.next_size.label()),
             Label::Message => {
                 if game.paused {
                     "Simulation paused. Press Esc to resume.".into()
@@ -196,6 +216,11 @@ pub fn update(
                 Color::srgb(0.28, 0.36, 0.39)
             }
             Action::Restart => Color::srgb(0.18, 0.25, 0.28),
+            Action::SelectSize(size) if *size == game.next_size => Color::srgb(0.46, 0.32, 0.08),
+            Action::SelectSize(_) if *interaction == Interaction::Hovered => {
+                Color::srgb(0.28, 0.36, 0.39)
+            }
+            Action::SelectSize(_) => Color::srgb(0.18, 0.25, 0.28),
         };
     }
 }

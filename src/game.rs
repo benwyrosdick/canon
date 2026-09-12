@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     physics::*,
-    terrain::{HALF, Rng, SPAWNS, Terrain},
+    terrain::{MapSize, Rng, Terrain},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,6 +45,9 @@ pub enum Effect {
 #[derive(Resource)]
 pub struct Game {
     pub seed: u64,
+    pub size: MapSize,
+    /// Applied by New Map; selecting a size never interrupts the current match.
+    pub next_size: MapSize,
     pub cannons: [Cannon; 2],
     pub active: usize,
     pub round: u32,
@@ -61,9 +64,10 @@ pub struct Game {
 
 impl Game {
     pub fn new(seed: u64, terrain: &Terrain) -> Self {
+        let spawns = terrain.size.spawns();
         let cannons = std::array::from_fn(|i| {
-            let spawn = SPAWNS[i];
-            let delta = SPAWNS[1 - i] - spawn;
+            let spawn = spawns[i];
+            let delta = spawns[1 - i] - spawn;
             Cannon {
                 position: Vec3::new(
                     spawn.x,
@@ -72,12 +76,14 @@ impl Game {
                 ),
                 yaw: delta.y.atan2(delta.x),
                 elevation: 45.0_f32.to_radians(),
-                power: 32.0,
+                power: 32.0 * terrain.size.scale().sqrt(),
                 health: 100.0,
             }
         });
         let mut game = Self {
             seed,
+            size: terrain.size,
+            next_size: terrain.size,
             cannons,
             active: 0,
             round: 1,
@@ -139,6 +145,7 @@ impl Game {
 pub enum Action {
     Primary,
     Restart,
+    SelectSize(MapSize),
 }
 
 pub fn fresh_seed() -> u64 {
@@ -163,16 +170,18 @@ pub fn input(
             match action {
                 Action::Primary => primary = true,
                 Action::Restart => restart = true,
+                Action::SelectSize(size) => game.next_size = *size,
             }
         }
     }
     if restart {
-        let seed = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
-            game.seed
+        let (seed, size) = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight)
+        {
+            (game.seed, game.size)
         } else {
-            fresh_seed()
+            (fresh_seed(), game.next_size)
         };
-        let mut next = Terrain::new(seed);
+        let mut next = Terrain::new(seed, size);
         next.mesh = terrain.mesh.clone();
         if let Some(mesh) = meshes.get_mut(&terrain.mesh) {
             *mesh = next.build_mesh();
@@ -212,8 +221,8 @@ pub fn input(
     let dt = time.delta_secs().min(0.05) * precision;
     let active = game.active;
     let cannon = &mut game.cannons[active];
-    // A/D are screen-relative when viewing from behind the active cannon.
-    cannon.yaw += axis(KeyCode::KeyA, KeyCode::KeyD) * dt * 0.55;
+    // A decreases bearing; D increases it.
+    cannon.yaw += axis(KeyCode::KeyD, KeyCode::KeyA) * dt * 0.55;
     cannon.yaw = cannon.yaw.rem_euclid(std::f32::consts::TAU);
     cannon.elevation = (cannon.elevation + axis(KeyCode::KeyW, KeyCode::KeyS) * dt * 0.45)
         .clamp(5.0_f32.to_radians(), 85.0_f32.to_radians());
@@ -281,7 +290,7 @@ pub fn simulate(
             "DIRECT HIT!".into()
         } else if damage.iter().any(|d| *d > 0.0) {
             format!(
-                "Splash damage — Red -{:.0} / Blue -{:.0}",
+                "Splash damage - Red -{:.0} / Blue -{:.0}",
                 damage[0], damage[1]
             )
         } else {
@@ -293,8 +302,8 @@ pub fn simulate(
         game.phase = Phase::Resolving(1.5);
     } else if ball.age > MAX_FLIGHT
         || ball.position.y < -20.0
-        || ball.position.x.abs() > HALF + 15.0
-        || ball.position.z.abs() > HALF + 15.0
+        || ball.position.x.abs() > game.size.half() + 15.0
+        || ball.position.z.abs() > game.size.half() + 15.0
     {
         game.ball = None;
         game.phase = Phase::Resolving(0.8);
@@ -315,9 +324,91 @@ pub fn simulate(
 mod tests {
     use super::*;
 
-    fn simulation_app() -> App {
+    #[test]
+    fn bounds_and_cannon_spacing_follow_the_active_size() {
+        for size in MapSize::ALL {
+            let mut app = simulation_app(size);
+            {
+                let mut game = app.world_mut().resource_mut::<Game>();
+                assert!((game.cannons[0].position.x + 40.0 * size.scale()).abs() < 0.001);
+                assert!((game.cannons[1].position.x - 40.0 * size.scale()).abs() < 0.001);
+                game.phase = Phase::Flying;
+                game.ball = Some(Ball {
+                    position: Vec3::new(size.half() + 10.0, 100.0, 0.0),
+                    velocity: Vec3::ZERO,
+                    age: 0.0,
+                });
+            }
+            app.update();
+            assert_eq!(app.world().resource::<Game>().phase, Phase::Flying);
+            app.world_mut()
+                .resource_mut::<Game>()
+                .ball
+                .as_mut()
+                .unwrap()
+                .position
+                .x = size.half() + 16.0;
+            app.update();
+            assert!(app.world().resource::<Game>().ball.is_none());
+        }
+    }
+
+    #[test]
+    fn size_selection_applies_on_new_map_and_replay_keeps_current_size_and_seed() {
         let mut app = App::new();
-        let mut terrain = Terrain::new(42);
+        let mut meshes = Assets::<Mesh>::default();
+        let mut terrain = Terrain::new(42, MapSize::Small);
+        terrain.mesh = meshes.add(terrain.build_mesh());
+        let mut game = Game::new(42, &terrain);
+        game.phase = Phase::Aiming;
+        game.fire();
+        app.insert_resource(game)
+            .insert_resource(terrain)
+            .insert_resource(meshes)
+            .insert_resource(Time::<()>::default())
+            .insert_resource(ButtonInput::<KeyCode>::default())
+            .add_systems(Update, input);
+        app.world_mut()
+            .spawn((Action::SelectSize(MapSize::Large), Interaction::Pressed));
+        app.update();
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.size, MapSize::Small);
+        assert_eq!(game.next_size, MapSize::Large);
+        assert!(game.ball.is_some());
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyR);
+        app.update();
+        let game = app.world().resource::<Game>();
+        let seed = game.seed;
+        let wind = game.wind;
+        let positions = game.cannons.map(|c| c.position);
+        assert_eq!(game.size, MapSize::Large);
+        assert_eq!(game.phase, Phase::Handoff);
+        assert!(game.ball.is_none());
+        assert_eq!(app.world().resource::<Terrain>().size, MapSize::Large);
+
+        app.world_mut().resource_mut::<Game>().next_size = MapSize::Medium;
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.reset_all();
+            keys.press(KeyCode::ShiftLeft);
+            keys.press(KeyCode::KeyR);
+        }
+        app.update();
+        let game = app.world().resource::<Game>();
+        assert_eq!(
+            (game.size, game.next_size, game.seed),
+            (MapSize::Large, MapSize::Large, seed)
+        );
+        assert_eq!(game.wind, wind);
+        assert_eq!(game.cannons.map(|c| c.position), positions);
+    }
+
+    fn simulation_app(size: MapSize) -> App {
+        let mut app = App::new();
+        let mut terrain = Terrain::new(42, size);
         let mut meshes = Assets::<Mesh>::default();
         terrain.mesh = meshes.add(terrain.build_mesh());
         let game = Game::new(42, &terrain);
@@ -333,7 +424,7 @@ mod tests {
 
     #[test]
     fn direct_hit_deforms_ground_settles_cannon_and_ends_match_once() {
-        let mut app = simulation_app();
+        let mut app = simulation_app(MapSize::Small);
         let target = app.world().resource::<Game>().cannons[1].position;
         {
             let mut game = app.world_mut().resource_mut::<Game>();
@@ -368,13 +459,13 @@ mod tests {
 
     #[test]
     fn pause_freezes_shot_and_miss_hands_off_without_damage() {
-        let mut app = simulation_app();
+        let mut app = simulation_app(MapSize::Small);
         {
             let mut game = app.world_mut().resource_mut::<Game>();
             game.phase = Phase::Flying;
             game.paused = true;
             game.ball = Some(Ball {
-                position: Vec3::new(HALF + 20.0, 100.0, 0.0),
+                position: Vec3::new(MapSize::Small.half() + 20.0, 100.0, 0.0),
                 velocity: Vec3::X * 30.0,
                 age: 0.0,
             });
@@ -393,7 +484,7 @@ mod tests {
 
     #[test]
     fn turns_require_ready_and_wind_is_shared_for_a_round() {
-        let terrain = Terrain::new(1);
+        let terrain = Terrain::new(1, MapSize::Small);
         let mut g = Game::new(1, &terrain);
         g.fire();
         assert!(g.ball.is_none());
@@ -419,7 +510,7 @@ mod tests {
 
     #[test]
     fn winner_and_draw_do_not_start_another_turn() {
-        let t = Terrain::new(2);
+        let t = Terrain::new(2, MapSize::Small);
         for (health, expected) in [
             ([0.0, 100.0], Some(1)),
             ([100.0, 0.0], Some(0)),

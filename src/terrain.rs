@@ -1,10 +1,58 @@
 use bevy::{asset::RenderAssetUsages, mesh::PrimitiveTopology, prelude::*};
 
-pub const CELLS: usize = 80;
 pub const STEP: f32 = 1.5;
-pub const HALF: f32 = CELLS as f32 * STEP / 2.0;
 pub const FLOOR: f32 = -6.0;
-pub const SPAWNS: [Vec2; 2] = [Vec2::new(-40.0, -8.0), Vec2::new(40.0, 8.0)];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MapSize {
+    #[default]
+    Small,
+    Medium,
+    Large,
+}
+
+impl MapSize {
+    pub const ALL: [Self; 3] = [Self::Small, Self::Medium, Self::Large];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Small => "Small",
+            Self::Medium => "Medium",
+            Self::Large => "Large",
+        }
+    }
+
+    pub fn cells(self) -> usize {
+        match self {
+            Self::Small => 80,
+            Self::Medium => 120,
+            Self::Large => 160,
+        }
+    }
+
+    pub fn half(self) -> f32 {
+        self.cells() as f32 * STEP / 2.0
+    }
+
+    pub fn scale(self) -> f32 {
+        self.half() / Self::Small.half()
+    }
+
+    pub fn spawns(self) -> [Vec2; 2] {
+        [Vec2::new(-40.0, -8.0), Vec2::new(40.0, 8.0)].map(|p| p * self.scale())
+    }
+}
+
+impl std::str::FromStr for MapSize {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|size| size.label().eq_ignore_ascii_case(value))
+            .ok_or_else(|| format!("Unknown map size '{value}'; use small, medium, or large"))
+    }
+}
 
 /// Small deterministic PRNG: a seed reproduces terrain and round winds.
 #[derive(Clone)]
@@ -30,19 +78,23 @@ impl Rng {
 
 #[derive(Resource)]
 pub struct Terrain {
+    pub size: MapSize,
     heights: Vec<f32>,
     original: Vec<f32>,
     pub mesh: Handle<Mesh>,
 }
 
 impl Terrain {
-    pub fn new(seed: u64) -> Self {
+    pub fn new(seed: u64, size: MapSize) -> Self {
+        let cells = size.cells();
+        let half = size.half();
+        let scale = size.scale();
         let mut rng = Rng::new(seed);
         let hills: Vec<_> = (0..24)
             .map(|_| {
                 (
-                    Vec2::new(rng.range(-HALF, HALF), rng.range(-HALF, HALF)),
-                    rng.range(9.0, 24.0),
+                    Vec2::new(rng.range(-half, half), rng.range(-half, half)),
+                    rng.range(9.0, 24.0) * scale,
                     rng.range(-3.0, 8.0),
                 )
             })
@@ -52,19 +104,20 @@ impl Terrain {
             rng.range(0.0, std::f32::consts::TAU),
         ];
         let height = |p: Vec2| {
-            let mut h =
-                3.0 + (p.x * 0.075 + phases[0]).sin() * 1.8 + (p.y * 0.09 + phases[1]).cos() * 1.5;
+            let mut h = 3.0
+                + (p.x / scale * 0.075 + phases[0]).sin() * 1.8
+                + (p.y / scale * 0.09 + phases[1]).cos() * 1.5;
             for (center, radius, amplitude) in &hills {
                 h += amplitude * (-p.distance_squared(*center) / (radius * radius)).exp();
             }
             h.clamp(0.0, 17.0)
         };
-        let mut heights = Vec::with_capacity((CELLS + 1).pow(2));
-        for z in 0..=CELLS {
-            for x in 0..=CELLS {
-                let p = Vec2::new(x as f32 * STEP - HALF, z as f32 * STEP - HALF);
+        let mut heights = Vec::with_capacity((cells + 1).pow(2));
+        for z in 0..=cells {
+            for x in 0..=cells {
+                let p = Vec2::new(x as f32 * STEP - half, z as f32 * STEP - half);
                 let mut h = height(p);
-                for spawn in SPAWNS {
+                for spawn in size.spawns() {
                     let blend = ((p.distance(spawn) - 4.0) / 5.0).clamp(0.0, 1.0);
                     let blend = blend * blend * (3.0 - 2.0 * blend);
                     h = height(spawn) * (1.0 - blend) + h * blend;
@@ -73,6 +126,7 @@ impl Terrain {
             }
         }
         Self {
+            size,
             original: heights.clone(),
             heights,
             mesh: Handle::default(),
@@ -81,21 +135,23 @@ impl Terrain {
 
     fn vertex(&self, x: usize, z: usize) -> Vec3 {
         Vec3::new(
-            x as f32 * STEP - HALF,
-            self.heights[z * (CELLS + 1) + x],
-            z as f32 * STEP - HALF,
+            x as f32 * STEP - self.size.half(),
+            self.heights[z * (self.size.cells() + 1) + x],
+            z as f32 * STEP - self.size.half(),
         )
     }
 
     /// Barycentric interpolation matches the actual rendered triangles, not a bilinear surface.
     pub fn height(&self, x: f32, z: f32) -> Option<f32> {
-        if !(-HALF..=HALF).contains(&x) || !(-HALF..=HALF).contains(&z) {
+        let half = self.size.half();
+        let cells = self.size.cells();
+        if !(-half..=half).contains(&x) || !(-half..=half).contains(&z) {
             return None;
         }
-        let gx = (x + HALF) / STEP;
-        let gz = (z + HALF) / STEP;
-        let ix = (gx.floor() as usize).min(CELLS - 1);
-        let iz = (gz.floor() as usize).min(CELLS - 1);
+        let gx = (x + half) / STEP;
+        let gz = (z + half) / STEP;
+        let ix = (gx.floor() as usize).min(cells - 1);
+        let iz = (gz.floor() as usize).min(cells - 1);
         let (u, v) = (gx - ix as f32, gz - iz as f32);
         let a = self.vertex(ix, iz).y;
         let b = self.vertex(ix + 1, iz).y;
@@ -109,14 +165,15 @@ impl Terrain {
     }
 
     pub fn crater(&mut self, center: Vec3, radius: f32) {
-        for z in 0..=CELLS {
-            for x in 0..=CELLS {
+        let cells = self.size.cells();
+        for z in 0..=cells {
+            for x in 0..=cells {
                 let p = self.vertex(x, z);
                 let r2 = Vec2::new(p.x - center.x, p.z - center.z).length_squared();
                 if r2 < radius * radius {
                     // A lower hemisphere cuts a bowl; never adds material or cuts below bedrock.
                     let bowl = center.y - (radius * radius - r2).sqrt() * 0.72;
-                    let i = z * (CELLS + 1) + x;
+                    let i = z * (cells + 1) + x;
                     self.heights[i] = self.heights[i].min(bowl).max(FLOOR);
                 }
             }
@@ -124,6 +181,7 @@ impl Terrain {
     }
 
     pub fn build_mesh(&self) -> Mesh {
+        let cells = self.size.cells();
         let mut positions = Vec::new();
         let mut normals = Vec::new();
         let mut colors = Vec::new();
@@ -140,17 +198,17 @@ impl Terrain {
                 colors.push(color);
             }
         };
-        for z in 0..CELLS {
-            for x in 0..CELLS {
+        for z in 0..cells {
+            for x in 0..cells {
                 let a = self.vertex(x, z);
                 let b = self.vertex(x + 1, z);
                 let c = self.vertex(x, z + 1);
                 let d = self.vertex(x + 1, z + 1);
                 let cut = [
-                    z * (CELLS + 1) + x,
-                    z * (CELLS + 1) + x + 1,
-                    (z + 1) * (CELLS + 1) + x,
-                    (z + 1) * (CELLS + 1) + x + 1,
+                    z * (cells + 1) + x,
+                    z * (cells + 1) + x + 1,
+                    (z + 1) * (cells + 1) + x,
+                    (z + 1) * (cells + 1) + x + 1,
                 ]
                 .iter()
                 .any(|&i| self.original[i] - self.heights[i] > 0.25);
@@ -171,12 +229,12 @@ impl Terrain {
             }
         }
         // Close the island sides, so craters near the edge never expose a paper-thin landscape.
-        for i in 0..CELLS {
+        for i in 0..cells {
             for (a, b) in [
                 (self.vertex(i + 1, 0), self.vertex(i, 0)),
-                (self.vertex(i, CELLS), self.vertex(i + 1, CELLS)),
+                (self.vertex(i, cells), self.vertex(i + 1, cells)),
                 (self.vertex(0, i), self.vertex(0, i + 1)),
-                (self.vertex(CELLS, i + 1), self.vertex(CELLS, i)),
+                (self.vertex(cells, i + 1), self.vertex(cells, i)),
             ] {
                 let low_a = Vec3::new(a.x, FLOOR - 3.0, a.z);
                 let low_b = Vec3::new(b.x, FLOOR - 3.0, b.z);
@@ -195,16 +253,18 @@ impl Terrain {
 
     /// Exact segment/triangle intersection in the cells covered by the swept shot.
     pub fn sweep(&self, from: Vec3, to: Vec3) -> Option<f32> {
+        let half = self.size.half();
+        let cells = self.size.cells();
         if self.height(from.x, from.z).is_some_and(|h| from.y <= h) {
             return Some(0.0);
         }
         let lo = from.min(to);
         let hi = from.max(to);
-        if hi.x < -HALF || lo.x > HALF || hi.z < -HALF || lo.z > HALF {
+        if hi.x < -half || lo.x > half || hi.z < -half || lo.z > half {
             return None;
         }
         let index =
-            |p: f32| (((p + HALF) / STEP).floor() as isize).clamp(0, CELLS as isize - 1) as usize;
+            |p: f32| (((p + half) / STEP).floor() as isize).clamp(0, cells as isize - 1) as usize;
         let mut best: Option<f32> = None;
         for z in index(lo.z)..=index(hi.z) {
             for x in index(lo.x)..=index(hi.x) {
@@ -247,24 +307,65 @@ mod tests {
     use super::*;
 
     #[test]
+    fn map_sizes_keep_cell_resolution_and_collide_at_their_edges() {
+        assert_eq!(MapSize::default(), MapSize::Small);
+        for (size, width) in MapSize::ALL.into_iter().zip([120.0, 180.0, 240.0]) {
+            assert_eq!(size.half() * 2.0, width);
+            assert_eq!(size.label().parse::<MapSize>().unwrap(), size);
+            let mut terrain = Terrain::new(42, size);
+            assert_eq!(terrain.heights.len(), (size.cells() + 1).pow(2));
+            assert_eq!(
+                terrain.build_mesh().count_vertices(),
+                size.cells().pow(2) * 6 + size.cells() * 24
+            );
+            for sign in [-1.0, 1.0] {
+                let edge = sign * size.half();
+                assert!(terrain.height(edge, edge).is_some());
+                assert!(terrain.height(edge + sign * 0.01, edge).is_none());
+                let from = Vec3::new(edge, 40.0, edge);
+                let to = Vec3::new(edge, -20.0, edge);
+                let hit = from.lerp(to, terrain.sweep(from, to).unwrap());
+                assert!((hit.y - terrain.height(edge, edge).unwrap()).abs() < 0.001);
+            }
+            // Destruction and collision also work beyond the original Small boundary.
+            let x = size.half() - 6.0;
+            let height = terrain.height(x, 0.0).unwrap();
+            terrain.crater(Vec3::new(x, height, 0.0), 8.0);
+            let from = Vec3::new(x, 40.0, 0.0);
+            let to = Vec3::new(x, -20.0, 0.0);
+            let hit = from.lerp(to, terrain.sweep(from, to).unwrap());
+            assert!(hit.y < height - 5.0);
+            assert!((hit.y - terrain.height(x, 0.0).unwrap()).abs() < 0.001);
+        }
+        assert!("huge".parse::<MapSize>().is_err());
+    }
+
+    #[test]
     fn seeds_reproduce_terrain_and_spawn_pads_are_flat() {
-        for seed in 0..100 {
-            let t = Terrain::new(seed);
-            assert_eq!(t.heights, Terrain::new(seed).heights);
-            for p in SPAWNS {
-                let h = t.height(p.x, p.y).unwrap();
-                assert!((0.0..=17.0).contains(&h));
-                for offset in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
-                    assert!((t.height(p.x + offset.x, p.y + offset.y).unwrap() - h).abs() < 0.001);
+        for size in MapSize::ALL {
+            for seed in 0..100 {
+                let t = Terrain::new(seed, size);
+                assert_eq!(t.heights, Terrain::new(seed, size).heights);
+                for p in size.spawns() {
+                    let h = t.height(p.x, p.y).unwrap();
+                    assert!((0.0..=17.0).contains(&h));
+                    for offset in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
+                        assert!(
+                            (t.height(p.x + offset.x, p.y + offset.y).unwrap() - h).abs() < 0.001
+                        );
+                    }
                 }
             }
         }
-        assert_ne!(Terrain::new(1).heights, Terrain::new(2).heights);
+        assert_ne!(
+            Terrain::new(1, MapSize::Small).heights,
+            Terrain::new(2, MapSize::Small).heights
+        );
     }
 
     #[test]
     fn crater_lowers_only_nearby_ground_and_respects_bedrock() {
-        let mut t = Terrain::new(4);
+        let mut t = Terrain::new(4, MapSize::Small);
         let far = t.height(40.0, 40.0);
         let h = t.height(0.0, 0.0).unwrap();
         t.crater(Vec3::new(0.0, h, 0.0), 8.0);
@@ -278,12 +379,17 @@ mod tests {
 
     #[test]
     fn fast_shots_hit_the_rendered_surface_before_and_after_destruction() {
-        let mut t = Terrain::new(42);
+        let mut t = Terrain::new(42, MapSize::Small);
         for crater in [false, true] {
             if crater {
                 t.crater(Vec3::new(0.0, t.height(0.0, 0.0).unwrap(), 0.0), 8.0);
             }
-            for (x, z) in [(0.0, 0.0), (0.3, 0.7), (-12.1, 24.8), (HALF, HALF)] {
+            for (x, z) in [
+                (0.0, 0.0),
+                (0.3, 0.7),
+                (-12.1, 24.8),
+                (t.size.half(), t.size.half()),
+            ] {
                 let from = Vec3::new(x, 80.0, z);
                 let to = Vec3::new(x, -30.0, z);
                 let hit = from.lerp(to, t.sweep(from, to).unwrap());
