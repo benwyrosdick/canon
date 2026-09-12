@@ -87,8 +87,12 @@ cargo run --release --locked
 
 The HUD displays both health totals, aiming values, seed, round, and wind.
 Compass bearings use **0° north (−Z), 90° east (+X)**. Wind is shown as the direction
-the air travels **toward**, not where it comes from. The gold arrow above the island
-shows the same direction in world space.
+the air travels **toward**, not where it comes from. An orange-and-white airport-style
+windsock stands on the **north** shore, clear of the east–west firing lane, on a
+painted compass rose (gold marks north, −Z). Its narrow tail points downwind; light
+wind leaves it drooping, while stronger wind extends and inflates it. The fabric
+flutters with the wind and freezes when paused. Its pole follows the terrain if a
+crater changes the ground beneath it.
 
 ### Rules
 
@@ -116,6 +120,7 @@ for distance, height, and crosswind. Press C to inspect the whole battlefield.
 | `src/physics.rs` | Analytic gravity/drag integration, swept sphere collision, splash damage |
 | `src/terrain.rs` | Seeded landscapes, triangle collision, crater deformation, mesh generation |
 | `src/visuals.rs` | Cannon models, lighting, tracer, particles, visual synchronization |
+| `src/windsock.rs` | North-shore windsock, compass rose, wind direction, inflation, and cloth animation |
 | `src/camera.rs` | Aiming, follow, impact, overview cameras, shake |
 | `src/ui.rs` | HUD, health bars, buttons, help, pause display |
 | `src/sound.rs` | Procedural PCM firing and explosion sounds |

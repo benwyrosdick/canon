@@ -256,11 +256,6 @@ pub fn sync_cannons(
             GOLD,
         );
     }
-    // Compass on the island: +X east, -Z north. Arrow points where the air travels.
-    let origin = Vec3::new(0.0, 26.0, 0.0);
-    gizmos.arrow(origin, origin + game.wind, GOLD);
-    gizmos.line(origin - Vec3::X * 3.0, origin + Vec3::X * 3.0, Color::WHITE);
-    gizmos.line(origin - Vec3::Z * 3.0, origin + Vec3::Z * 3.0, Color::WHITE);
     if game.trail.len() > 1 {
         gizmos.linestrip(
             game.trail.iter().copied(),

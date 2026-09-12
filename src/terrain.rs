@@ -41,6 +41,11 @@ impl MapSize {
     pub fn spawns(self) -> [Vec2; 2] {
         [Vec2::new(-40.0, -8.0), Vec2::new(40.0, 8.0)].map(|p| p * self.scale())
     }
+
+    /// North shore, inset so the compass rose stays on the island.
+    pub fn windsock_site(self) -> Vec2 {
+        Vec2::new(0.0, -(self.half() - 12.0))
+    }
 }
 
 impl std::str::FromStr for MapSize {
@@ -117,10 +122,15 @@ impl Terrain {
             for x in 0..=cells {
                 let p = Vec2::new(x as f32 * STEP - half, z as f32 * STEP - half);
                 let mut h = height(p);
-                for spawn in size.spawns() {
-                    let blend = ((p.distance(spawn) - 4.0) / 5.0).clamp(0.0, 1.0);
+                let pads = [
+                    (size.spawns()[0], 4.0, 9.0),
+                    (size.spawns()[1], 4.0, 9.0),
+                    (size.windsock_site(), 9.0, 14.0),
+                ];
+                for (center, inner, outer) in pads {
+                    let blend = ((p.distance(center) - inner) / (outer - inner)).clamp(0.0, 1.0);
                     let blend = blend * blend * (3.0 - 2.0 * blend);
-                    h = height(spawn) * (1.0 - blend) + h * blend;
+                    h = height(center) * (1.0 - blend) + h * blend;
                 }
                 heights.push(h);
             }
@@ -346,7 +356,7 @@ mod tests {
             for seed in 0..100 {
                 let t = Terrain::new(seed, size);
                 assert_eq!(t.heights, Terrain::new(seed, size).heights);
-                for p in size.spawns() {
+                for p in size.spawns().into_iter().chain([size.windsock_site()]) {
                     let h = t.height(p.x, p.y).unwrap();
                     assert!((0.0..=17.0).contains(&h));
                     for offset in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
@@ -355,6 +365,9 @@ mod tests {
                         );
                     }
                 }
+                let sock = size.windsock_site();
+                assert!(sock.y < -10.0);
+                assert!(sock.y.abs() < size.half());
             }
         }
         assert_ne!(

@@ -6,6 +6,7 @@ mod sound;
 mod terrain;
 mod ui;
 mod visuals;
+mod windsock;
 
 use bevy::prelude::*;
 
@@ -50,7 +51,13 @@ fn main() {
         }))
         .add_systems(
             Startup,
-            (visuals::setup, camera::setup, ui::setup, sound::setup),
+            (
+                visuals::setup,
+                camera::setup,
+                ui::setup,
+                sound::setup,
+                windsock::setup,
+            ),
         )
         .add_systems(FixedUpdate, game::simulate)
         .add_systems(
@@ -58,6 +65,7 @@ fn main() {
             (
                 game::input,
                 visuals::sync_environment,
+                windsock::update,
                 visuals::sync_cannons,
                 visuals::projectile,
                 visuals::effects,
