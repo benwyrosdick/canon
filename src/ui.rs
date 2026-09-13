@@ -24,7 +24,6 @@ pub enum Label {
     Primary,
     Pause,
     Map,
-    NextMap,
     MenuStatus,
 }
 #[derive(Component)]
@@ -121,7 +120,24 @@ pub fn setup(mut commands: Commands) {
                                         });
                                 }
                             });
-                        brand.spawn((text("", 12.0, MUTED), Label::NextMap));
+                        brand
+                            .spawn((
+                                Button,
+                                Action::Restart,
+                                HostOnly,
+                                Node {
+                                    padding: UiRect::axes(px(12), px(10)),
+                                    margin: UiRect::top(px(4)),
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.18, 0.25, 0.28)),
+                                BorderRadius::all(px(8)),
+                            ))
+                            .with_children(|button| {
+                                button.spawn(text("NEW MAP", 14.0, PAPER));
+                            });
                     });
                     top.spawn(Node {
                         flex_grow: 1.0,
@@ -439,21 +455,6 @@ pub fn setup(mut commands: Commands) {
                                             Label::Primary,
                                         ));
                                     });
-                                buttons
-                                    .spawn((
-                                        Button,
-                                        Action::Restart,
-                                        HostOnly,
-                                        Node {
-                                            padding: UiRect::axes(px(18), px(14)),
-                                            ..default()
-                                        },
-                                        BackgroundColor(Color::srgb(0.18, 0.25, 0.28)),
-                                        BorderRadius::all(px(8)),
-                                    ))
-                                    .with_children(|button| {
-                                        button.spawn(text("NEW MAP / R", 16.0, PAPER));
-                                    });
                             });
                     });
                 });
@@ -637,10 +638,7 @@ pub fn update(
             ),
             Label::Elevation => format!("ELV  {:04.1}", cannon.elevation.to_degrees()),
             Label::Power => format!("{:.0} m/s", cannon.power),
-            Label::Wind => format!(
-                "WIND  {:.1} m/s toward {compass}\nShared for both turns this round",
-                game.wind.length()
-            ),
+            Label::Wind => format!("WIND  {:.1} m/s toward {compass}", game.wind.length()),
             Label::Round => format!(
                 "ROUND {:02}  /  SOUND {}\nSEED {}",
                 game.round,
@@ -654,18 +652,6 @@ pub fn update(
                 game.size.half() * 2.0,
                 game.size.half() * 2.0
             ),
-            Label::NextMap => {
-                if guest {
-                    format!(
-                        "Host selected {} / {:.0} x {:.0} m",
-                        game.size.label(),
-                        game.size.half() * 2.0,
-                        game.size.half() * 2.0
-                    )
-                } else {
-                    format!("{} selected. Apply: New Map / R", game.next_size.label())
-                }
-            }
             Label::Message => {
                 if online {
                     if let Some(net) = net.as_deref() {

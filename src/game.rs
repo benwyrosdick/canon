@@ -54,7 +54,7 @@ pub enum Effect {
 pub struct Game {
     pub seed: u64,
     pub size: MapSize,
-    /// Applied by New Map; selecting a size never interrupts the current match.
+    /// Applied by New Map during a match; between matches a size click generates immediately.
     pub next_size: MapSize,
     pub cannons: [Cannon; 2],
     pub active: usize,
@@ -174,6 +174,10 @@ impl Game {
         }
     }
 
+    pub fn between_matches(&self) -> bool {
+        matches!(self.phase, Phase::Handoff | Phase::Finished(_))
+    }
+
     fn finish_turn(&mut self) {
         self.phase = match (self.cannons[0].health <= 0.0, self.cannons[1].health <= 0.0) {
             (true, true) => Phase::Finished(None),
@@ -225,15 +229,31 @@ pub fn input(
     let my_turn = net::my_turn(mode.as_deref(), net.as_deref(), &game);
     let mut primary = keys.just_pressed(KeyCode::Space) || keys.just_pressed(KeyCode::Enter);
     let mut restart = keys.just_pressed(KeyCode::KeyR);
+    let mut apply_size = None;
     for (interaction, action) in &buttons {
         if *interaction == Interaction::Pressed {
             match action {
                 Action::Primary => primary = true,
                 Action::Restart => restart = true,
-                Action::SelectSize(size) if host => game.next_size = *size,
+                Action::SelectSize(size) if host => {
+                    game.next_size = *size;
+                    if game.between_matches() {
+                        apply_size = Some(*size);
+                    }
+                }
                 Action::SelectSize(_) => {}
             }
         }
+    }
+    if let Some(size) = apply_size {
+        Game::restart_world(fresh_seed(), size, &mut game, &mut terrain, &mut meshes);
+        if let Some(net) = net.as_deref() {
+            net.send(&Msg::NewMatch {
+                seed: game.seed,
+                size,
+            });
+        }
+        return;
     }
     if restart && host {
         let (seed, size) = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight)
@@ -549,6 +569,31 @@ mod tests {
         );
         assert_eq!(game.wind, wind);
         assert_eq!(game.cannons.map(|c| c.position), positions);
+    }
+
+    #[test]
+    fn size_click_generates_a_map_between_matches() {
+        let mut app = App::new();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut terrain = Terrain::new(42, MapSize::Small);
+        terrain.mesh = meshes.add(terrain.build_mesh());
+        let game = Game::new(42, &terrain);
+        assert_eq!(game.phase, Phase::Handoff);
+        app.insert_resource(game)
+            .insert_resource(terrain)
+            .insert_resource(meshes)
+            .insert_resource(Time::<()>::default())
+            .insert_resource(ButtonInput::<KeyCode>::default())
+            .add_systems(Update, input);
+        app.world_mut()
+            .spawn((Action::SelectSize(MapSize::Large), Interaction::Pressed));
+        app.update();
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.size, MapSize::Large);
+        assert_eq!(game.next_size, MapSize::Large);
+        assert_eq!(game.phase, Phase::Handoff);
+        assert_ne!(game.seed, 42);
+        assert_eq!(app.world().resource::<Terrain>().size, MapSize::Large);
     }
 
     fn simulation_app(size: MapSize) -> App {
