@@ -14,6 +14,8 @@ pub struct CameraRig {
     pitch: f32,
     radius: f32,
     overview: bool,
+    /// Aiming camera stays behind the barrel until unlocked for free orbit.
+    locked: bool,
     last_turn: (u64, u32, usize, MapSize),
     pub shake: f32,
 }
@@ -39,6 +41,7 @@ pub fn setup(mut commands: Commands, game: Res<Game>) {
         pitch: 0.42,
         radius: 39.0,
         overview: false,
+        locked: true,
         last_turn: (0, 0, 0, MapSize::Small),
         shake: 0.0,
     });
@@ -70,12 +73,19 @@ pub fn update(
     if keys.just_pressed(KeyCode::KeyC) {
         rig.overview = !rig.overview;
     }
-    if buttons.pressed(MouseButton::Right) {
+    if keys.just_pressed(KeyCode::KeyX) {
+        rig.locked = !rig.locked;
+    }
+    let cannon = game.cannons[game.active];
+    if rig.locked {
+        rig.yaw = cannon.yaw + std::f32::consts::PI;
+    } else if buttons.pressed(MouseButton::Right) {
         rig.yaw -= motion.delta.x * 0.005;
+    }
+    if buttons.pressed(MouseButton::Right) {
         rig.pitch = (rig.pitch + motion.delta.y * 0.004).clamp(0.15, 1.35);
     }
     rig.radius = (rig.radius - wheel * 2.0).clamp(18.0, 95.0);
-    let cannon = game.cannons[game.active];
     let horizontal = Vec3::new(cannon.yaw.cos(), 0.0, cannon.yaw.sin());
     let overview = rig.overview || matches!(game.phase, Phase::Handoff | Phase::Finished(_));
     let (target, offset) = if overview {
@@ -119,5 +129,74 @@ pub fn update(
             .looking_at(target + shake, Vec3::Y)
             .rotation;
         transform.rotation = transform.rotation.slerp(rotation, blend);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{game::Game, terrain::Terrain};
+
+    fn camera_app(yaw: f32, locked: bool) -> App {
+        let terrain = Terrain::new(1, MapSize::Small);
+        let mut game = Game::new(1, &terrain);
+        game.phase = Phase::Aiming;
+        game.cannons[0].yaw = yaw;
+        let mut app = App::new();
+        app.add_message::<MouseWheel>();
+        app.insert_resource(game)
+            .insert_resource(Time::<()>::default())
+            .insert_resource(ButtonInput::<KeyCode>::default())
+            .insert_resource(ButtonInput::<MouseButton>::default())
+            .insert_resource(AccumulatedMouseMotion::default())
+            .insert_resource(CameraRig {
+                yaw: yaw + std::f32::consts::PI,
+                pitch: 0.42,
+                radius: 39.0,
+                overview: false,
+                locked,
+                last_turn: (1, 1, 0, MapSize::Small),
+                shake: 0.0,
+            })
+            .add_systems(Update, update);
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Transform::default(),
+            DistanceFog::default(),
+        ));
+        app
+    }
+
+    #[test]
+    fn x_locks_and_unlocks_the_view_behind_the_turret() {
+        let mut app = camera_app(0.4, true);
+        app.world_mut().resource_mut::<Game>().cannons[0].yaw = 1.1;
+        app.update();
+        assert!(
+            (app.world().resource::<CameraRig>().yaw - (1.1 + std::f32::consts::PI)).abs() < 0.001
+        );
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyX);
+        app.update();
+        assert!(!app.world().resource::<CameraRig>().locked);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+        app.world_mut().resource_mut::<Game>().cannons[0].yaw = 2.0;
+        app.update();
+        assert!(
+            (app.world().resource::<CameraRig>().yaw - (1.1 + std::f32::consts::PI)).abs() < 0.001
+        );
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyX);
+        app.update();
+        let rig = app.world().resource::<CameraRig>();
+        assert!(rig.locked);
+        assert!((rig.yaw - (2.0 + std::f32::consts::PI)).abs() < 0.001);
     }
 }

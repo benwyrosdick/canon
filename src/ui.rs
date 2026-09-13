@@ -259,6 +259,7 @@ pub fn setup(mut commands: Commands) {
                             "Right-drag   Orbit",
                             "Scroll       Zoom",
                             "C            Overview",
+                            "X            Lock view",
                             "Esc          Pause",
                             "Tab          Menu",
                             "M            Sound",

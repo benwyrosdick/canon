@@ -280,9 +280,10 @@ cargo run --release --locked
 | Left-drag on gauges | Set bearing, elevation, and power |
 | Hold Shift | Fine aiming and power adjustment |
 | Enter / Space | Ready during handoff; fire while aiming |
-| Right mouse drag | Orbit the aiming camera |
+| Right mouse drag | Orbit the aiming camera (when view is unlocked) |
 | Mouse wheel | Zoom the aiming camera |
 | C | Toggle overview |
+| X | Lock / unlock the camera behind the turret |
 | Esc | Pause / resume (local only) |
 | M | Toggle firing / impact sound |
 | R | Start a fresh randomized match at the selected size |
