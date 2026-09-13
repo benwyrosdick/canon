@@ -17,11 +17,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.92.0
 
       - name: Import Developer ID certificate
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
+          if [[ -z "$MACOS_CERTIFICATE" ]]; then
+            echo "No MACOS_CERTIFICATE secret; the app will be ad-hoc signed."
+            exit 0
+          fi
           CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
@@ -47,11 +50,13 @@ jobs:
         run: bash scripts/build-macos.sh
 
       - name: Verify package
+        env:
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           codesign --verify --deep --strict "dist/macos/3D Canon.app"
           codesign -dv --verbose=2 "dist/macos/3D Canon.app"
           hdiutil verify "dist/macos/3D Canon.dmg"
-          if [[ -n "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" ]]; then
+          if [[ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
             spctl --assess --type execute -vv "dist/macos/3D Canon.app"
             xcrun stapler validate "dist/macos/3D Canon.dmg"
           fi
