@@ -5,6 +5,12 @@ A native Rust / Bevy artillery game for **two players sharing one computer** or
 Aim across a low-poly island, account for the wind, and blast the other cannon.
 Every explosion carves a crater into the actual collision surface.
 
+![Aiming from behind the red turret](screenshots/aim.png)
+
+![The shell in flight toward the blue cannon](screenshots/flight.png)
+
+![A direct hit, crater, and wreckage](screenshots/impact.png)
+
 ## Run
 
 Install [Rust](https://rustup.rs/), then run from this folder:
@@ -358,9 +364,10 @@ Run an automated graphics smoke test (requires a desktop display):
 cargo run --locked -- --seed=42 --smoke-test
 ```
 
-It aims, fires, waits for the shot to resolve, writes `target/smoke-aim.png` and
-`target/smoke-impact.png`, and closes after about 12–15 seconds of game time.
-Add `--size=medium` or `--size=large` to check those sizes too.
+It aims, fires, waits for the shot to resolve, writes `screenshots/aim.png`,
+`screenshots/flight.png`, and `screenshots/impact.png`, and closes after about
+12–15 seconds of game time. Add `--size=medium` or `--size=large` to check those
+sizes too. The images in this README were captured that way with `--seed=42`.
 
 Tests cover timestep consistency, wind effects, fast-shot collision, damage falloff,
 terrain repeatability and spawn pads across 100 seeds for each size, map boundaries,
