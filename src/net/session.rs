@@ -361,7 +361,7 @@ fn apply(
             game.ball = None;
             game.phase = match winner {
                 Some(winner) => Phase::Finished(winner),
-                None => Phase::Handoff,
+                None => Phase::Aiming,
             };
         }
         _ => {}

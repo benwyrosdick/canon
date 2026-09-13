@@ -4,7 +4,7 @@ use bevy::{
 };
 
 use crate::{
-    game::{Game, Phase},
+    game::{Cannon, Game, Phase},
     terrain::MapSize,
 };
 
@@ -20,13 +20,31 @@ pub struct CameraRig {
     pub shake: f32,
 }
 
+fn overview_view(scale: f32) -> (Vec3, Vec3) {
+    (Vec3::ZERO, Vec3::new(-92.0, 115.0, 150.0) * scale)
+}
+
+fn follow_view(cannon: Cannon, yaw: f32, pitch: f32, radius: f32) -> (Vec3, Vec3) {
+    let horizontal = Vec3::new(cannon.yaw.cos(), 0.0, cannon.yaw.sin());
+    let offset = Vec3::new(
+        yaw.cos() * pitch.cos(),
+        pitch.sin(),
+        yaw.sin() * pitch.cos(),
+    ) * radius;
+    (cannon.position + horizontal * 6.0, offset)
+}
+
 pub fn setup(mut commands: Commands, game: Res<Game>) {
+    let cannon = game.cannons[game.active];
+    let yaw = cannon.yaw + std::f32::consts::PI;
+    let pitch = 0.42;
+    let radius = 39.0;
+    let (target, offset) = overview_view(game.size.scale());
     commands.spawn((
         Camera3d::default(),
         // No lookup textures required: use a tonemapper that is entirely analytic.
         bevy::core_pipeline::tonemapping::Tonemapping::Reinhard,
-        Transform::from_translation(Vec3::new(-95.0, 95.0, 125.0) * game.size.scale())
-            .looking_at(Vec3::new(0.0, 5.0, 0.0), Vec3::Y),
+        Transform::from_translation(target + offset).looking_at(target, Vec3::Y),
         DistanceFog {
             color: Color::srgb(0.57, 0.73, 0.80),
             falloff: FogFalloff::Linear {
@@ -37,12 +55,12 @@ pub fn setup(mut commands: Commands, game: Res<Game>) {
         },
     ));
     commands.insert_resource(CameraRig {
-        yaw: 0.0,
-        pitch: 0.42,
-        radius: 39.0,
+        yaw,
+        pitch,
+        radius,
         overview: false,
         locked: true,
-        last_turn: (0, 0, 0, MapSize::Small),
+        last_turn: (game.seed, game.round, game.active, game.size),
         shake: 0.0,
     });
 }
@@ -89,10 +107,7 @@ pub fn update(
     let horizontal = Vec3::new(cannon.yaw.cos(), 0.0, cannon.yaw.sin());
     let overview = rig.overview || matches!(game.phase, Phase::Handoff | Phase::Finished(_));
     let (target, offset) = if overview {
-        (
-            Vec3::ZERO,
-            Vec3::new(-92.0, 115.0, 150.0) * game.size.scale(),
-        )
+        overview_view(game.size.scale())
     } else if let Some(ball) = game.ball {
         let travel = Vec3::new(ball.velocity.x, 0.0, ball.velocity.z).normalize_or_zero();
         (
@@ -103,12 +118,7 @@ pub fn update(
         let target = game.trail.last().copied().unwrap_or(cannon.position);
         (target, -horizontal * 25.0 + Vec3::Y * 18.0)
     } else {
-        let offset = Vec3::new(
-            rig.yaw.cos() * rig.pitch.cos(),
-            rig.pitch.sin(),
-            rig.yaw.sin() * rig.pitch.cos(),
-        ) * rig.radius;
-        (cannon.position + horizontal * 6.0, offset)
+        follow_view(cannon, rig.yaw, rig.pitch, rig.radius)
     };
     let desired = target + offset;
     let blend = 1.0 - (-5.0 * time.delta_secs()).exp();
@@ -198,5 +208,30 @@ mod tests {
         let rig = app.world().resource::<CameraRig>();
         assert!(rig.locked);
         assert!((rig.yaw - (2.0 + std::f32::consts::PI)).abs() < 0.001);
+    }
+
+    fn camera_eye(app: &mut App) -> Vec3 {
+        let mut cameras = app
+            .world_mut()
+            .query_filtered::<&Transform, With<Camera3d>>();
+        cameras.single(app.world()).unwrap().translation
+    }
+
+    #[test]
+    fn opening_handoff_uses_overview_and_aiming_stays_in_the_tank() {
+        let mut app = camera_app(0.4, true);
+        app.world_mut().resource_mut::<Game>().phase = Phase::Handoff;
+        let mut time = Time::<()>::default();
+        time.advance_by(std::time::Duration::from_secs(4));
+        app.insert_resource(time);
+        app.update();
+        assert!(camera_eye(&mut app).y > 80.0);
+
+        app.world_mut().resource_mut::<Game>().phase = Phase::Aiming;
+        app.update();
+        let cannon = app.world().resource::<Game>().cannons[0].position;
+        let eye = camera_eye(&mut app);
+        assert!(eye.distance(cannon) < 50.0);
+        assert!(eye.y < 50.0);
     }
 }

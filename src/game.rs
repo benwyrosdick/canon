@@ -185,7 +185,7 @@ impl Game {
                     self.round += 1;
                     self.roll_wind();
                 }
-                Phase::Handoff
+                Phase::Aiming
             }
         };
     }
@@ -622,7 +622,7 @@ mod tests {
             app.update();
         }
         let game = app.world().resource::<Game>();
-        assert_eq!(game.phase, Phase::Handoff);
+        assert_eq!(game.phase, Phase::Aiming);
         assert_eq!(game.active, 1);
         assert!(game.cannons.iter().all(|c| c.health == 100.0));
     }
@@ -646,7 +646,7 @@ mod tests {
         assert!(g.effects.is_empty());
         let wind = g.wind;
         g.finish_turn();
-        assert_eq!((g.active, g.round, g.phase), (1, 1, Phase::Handoff));
+        assert_eq!((g.active, g.round, g.phase), (1, 1, Phase::Aiming));
         assert_eq!(g.wind, wind);
         g.finish_turn();
         assert_eq!((g.active, g.round), (0, 2));

@@ -269,12 +269,13 @@ cargo run --release --locked
 
 ## How to play
 
-1. Red goes first. Press **Enter** or click **Ready** to take control.
-2. Drive with the arrow keys if you want a new angle, then adjust aim, elevation,
-   and power. Press **Space** or click **Fire**.
+1. The match opens on the island overview. Press **Enter** or **Ready** to drop
+   behind Red’s turret and take the first turn.
+2. After each shot, the next player starts in their tank — no overview and no
+   extra Enter. **C** still toggles the island view.
 3. Watch the shell fly and the ground deform. The tracer records the last shot;
    the short team-colored guide shows barrel direction, not a predicted trajectory.
-4. Pass the keyboard to the next player when the handoff banner appears.
+4. Pass the keyboard to the next player after the shot settles.
 5. Destroy the opposing cannon to win. Press **R** for a new battlefield.
 
 | Control | Action |
@@ -284,7 +285,8 @@ cargo run --release --locked
 | Q / E | Decrease / increase power (15–52 m/s) |
 | Left / Right arrows | Drive along your north–south lane before firing |
 | Hold Shift | Fine aiming and power adjustment |
-| Enter / Space | Ready during handoff; fire while aiming |
+| Enter | Start the first round from overview; fire afterward |
+| Space | Fire |
 | Right mouse drag | Orbit the aiming camera (when view is unlocked) |
 | Mouse wheel | Zoom the aiming camera |
 | C | Toggle overview |

@@ -41,13 +41,12 @@ pub fn run(
         2 if *elapsed > 4.4 => {
             *stage = 3;
         }
-        3 if *elapsed > 10.0 && matches!(game.phase, Phase::Handoff | Phase::Finished(_)) => {
+        3 if *elapsed > 10.0
+            && game.ball.is_none()
+            && !matches!(game.phase, Phase::Flying | Phase::Resolving(_)) =>
+        {
             assert!(game.ball.is_none(), "Smoke-test shot should have finished");
-            assert!(
-                matches!(game.phase, Phase::Handoff | Phase::Finished(_)),
-                "Shot should have resolved"
-            );
-            info!("Render smoke test: shot resolved, waiting for overview camera");
+            info!("Render smoke test: shot resolved");
             *stage = 4;
             *elapsed = 0.0;
         }

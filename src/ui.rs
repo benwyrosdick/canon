@@ -255,6 +255,7 @@ pub fn setup(mut commands: Commands) {
                             "Arrows       Move",
                             "Shift        Fine tune",
                             "Space        Fire",
+                            "Enter        Start / Fire",
                             "Right-drag   Orbit",
                             "Scroll       Zoom",
                             "C            Overview",
@@ -681,7 +682,7 @@ pub fn update(
                     "Paused. Esc resumes. Tab or Main Menu returns to the title screen.".into()
                 } else if game.phase == Phase::Handoff {
                     format!(
-                        "{}  Pass to {player} and press Enter when ready.",
+                        "{}  Press Enter when you have looked over the island.",
                         game.message
                     )
                 } else {
