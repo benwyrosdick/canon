@@ -38,8 +38,14 @@ impl MapSize {
         self.half() / Self::Small.half()
     }
 
-    pub fn spawns(self) -> [Vec2; 2] {
-        [Vec2::new(-40.0, -8.0), Vec2::new(40.0, 8.0)].map(|p| p * self.scale())
+    /// West and east of the island. North-south (y) is unique per seed.
+    pub fn spawns(self, seed: u64) -> [Vec2; 2] {
+        let east = 40.0 * self.scale();
+        let mut rng = Rng::new(seed ^ 0xC0A57);
+        [
+            Vec2::new(-east, rng.range(-east, east)),
+            Vec2::new(east, rng.range(-east, east)),
+        ]
     }
 
     /// North shore, inset so the compass rose stays on the island.
@@ -84,6 +90,7 @@ impl Rng {
 #[derive(Resource)]
 pub struct Terrain {
     pub size: MapSize,
+    pub spawns: [Vec2; 2],
     heights: Vec<f32>,
     original: Vec<f32>,
     pub mesh: Handle<Mesh>,
@@ -94,6 +101,7 @@ impl Terrain {
         let cells = size.cells();
         let half = size.half();
         let scale = size.scale();
+        let spawns = size.spawns(seed);
         let mut rng = Rng::new(seed);
         let hills: Vec<_> = (0..24)
             .map(|_| {
@@ -123,8 +131,8 @@ impl Terrain {
                 let p = Vec2::new(x as f32 * STEP - half, z as f32 * STEP - half);
                 let mut h = height(p);
                 let pads = [
-                    (size.spawns()[0], 4.0, 9.0),
-                    (size.spawns()[1], 4.0, 9.0),
+                    (spawns[0], 4.0, 9.0),
+                    (spawns[1], 4.0, 9.0),
                     (size.windsock_site(), 9.0, 14.0),
                 ];
                 for (center, inner, outer) in pads {
@@ -137,6 +145,7 @@ impl Terrain {
         }
         Self {
             size,
+            spawns,
             original: heights.clone(),
             heights,
             mesh: Handle::default(),
@@ -353,10 +362,19 @@ mod tests {
     #[test]
     fn seeds_reproduce_terrain_and_spawn_pads_are_flat() {
         for size in MapSize::ALL {
+            let mut north_south = Vec::new();
             for seed in 0..100 {
                 let t = Terrain::new(seed, size);
                 assert_eq!(t.heights, Terrain::new(seed, size).heights);
-                for p in size.spawns().into_iter().chain([size.windsock_site()]) {
+                assert_eq!(t.spawns, size.spawns(seed));
+                let reach = 40.0 * size.scale();
+                assert!((t.spawns[0].x + reach).abs() < 0.001);
+                assert!((t.spawns[1].x - reach).abs() < 0.001);
+                for p in t.spawns {
+                    assert!(p.y.abs() <= reach + 0.001);
+                }
+                north_south.push(t.spawns.map(|p| p.y));
+                for p in t.spawns.into_iter().chain([size.windsock_site()]) {
                     let h = t.height(p.x, p.y).unwrap();
                     assert!((0.0..=17.0).contains(&h));
                     for offset in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
@@ -369,6 +387,7 @@ mod tests {
                 assert!(sock.y < -10.0);
                 assert!(sock.y.abs() < size.half());
             }
+            assert!(north_south.windows(2).any(|pair| pair[0] != pair[1]));
         }
         assert_ne!(
             Terrain::new(1, MapSize::Small).heights,

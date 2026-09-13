@@ -275,6 +275,7 @@ cargo run --release --locked
 | A / D | Decrease / increase aim bearing |
 | W / S | Raise / lower elevation (5–85°) |
 | Q / E | Decrease / increase power (15–52 m/s) |
+| Left-drag on gauges | Set bearing, elevation, and power |
 | Hold Shift | Fine aiming and power adjustment |
 | Enter / Space | Ready during handoff; fire while aiming |
 | Right mouse drag | Orbit the aiming camera |
