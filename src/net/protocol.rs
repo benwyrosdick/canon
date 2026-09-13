@@ -23,17 +23,20 @@ pub enum Msg {
         yaw: f32,
         elevation: f32,
         power: f32,
+        z: f32,
     },
     Ready,
     Fire {
         yaw: f32,
         elevation: f32,
         power: f32,
+        z: f32,
     },
     ShotFired {
         yaw: f32,
         elevation: f32,
         power: f32,
+        z: f32,
     },
     Ball {
         position: Vec3,
@@ -76,32 +79,38 @@ impl Msg {
                 yaw,
                 elevation,
                 power,
+                z,
             } => {
                 out.push(AIM);
                 push_f32(&mut out, yaw);
                 push_f32(&mut out, elevation);
                 push_f32(&mut out, power);
+                push_f32(&mut out, z);
             }
             Self::Ready => out.push(READY),
             Self::Fire {
                 yaw,
                 elevation,
                 power,
+                z,
             } => {
                 out.push(FIRE);
                 push_f32(&mut out, yaw);
                 push_f32(&mut out, elevation);
                 push_f32(&mut out, power);
+                push_f32(&mut out, z);
             }
             Self::ShotFired {
                 yaw,
                 elevation,
                 power,
+                z,
             } => {
                 out.push(SHOT);
                 push_f32(&mut out, yaw);
                 push_f32(&mut out, elevation);
                 push_f32(&mut out, power);
+                push_f32(&mut out, z);
             }
             Self::Ball { position, velocity } => {
                 out.push(BALL);
@@ -173,17 +182,20 @@ impl Msg {
                 yaw: take_f32(bytes, &mut i)?,
                 elevation: take_f32(bytes, &mut i)?,
                 power: take_f32(bytes, &mut i)?,
+                z: take_f32(bytes, &mut i)?,
             }),
             READY => Some(Self::Ready),
             FIRE => Some(Self::Fire {
                 yaw: take_f32(bytes, &mut i)?,
                 elevation: take_f32(bytes, &mut i)?,
                 power: take_f32(bytes, &mut i)?,
+                z: take_f32(bytes, &mut i)?,
             }),
             SHOT => Some(Self::ShotFired {
                 yaw: take_f32(bytes, &mut i)?,
                 elevation: take_f32(bytes, &mut i)?,
                 power: take_f32(bytes, &mut i)?,
+                z: take_f32(bytes, &mut i)?,
             }),
             BALL => Some(Self::Ball {
                 position: take_vec3(bytes, &mut i)?,
@@ -305,17 +317,20 @@ mod tests {
                 yaw: 1.25,
                 elevation: 0.7,
                 power: 33.5,
+                z: -12.5,
             },
             Msg::Ready,
             Msg::Fire {
                 yaw: 0.1,
                 elevation: 0.2,
                 power: 40.0,
+                z: 8.0,
             },
             Msg::ShotFired {
                 yaw: 0.1,
                 elevation: 0.2,
                 power: 40.0,
+                z: 8.0,
             },
             Msg::Ball {
                 position: Vec3::new(1.0, 2.0, 3.0),

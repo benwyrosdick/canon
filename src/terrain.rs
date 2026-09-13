@@ -38,9 +38,14 @@ impl MapSize {
         self.half() / Self::Small.half()
     }
 
+    /// East–west pad offset and north–south travel limit, scaled with the map.
+    pub fn lane_reach(self) -> f32 {
+        40.0 * self.scale()
+    }
+
     /// West and east of the island. North-south (y) is unique per seed.
     pub fn spawns(self, seed: u64) -> [Vec2; 2] {
-        let east = 40.0 * self.scale();
+        let east = self.lane_reach();
         let mut rng = Rng::new(seed ^ 0xC0A57);
         [
             Vec2::new(-east, rng.range(-east, east)),
@@ -367,7 +372,7 @@ mod tests {
                 let t = Terrain::new(seed, size);
                 assert_eq!(t.heights, Terrain::new(seed, size).heights);
                 assert_eq!(t.spawns, size.spawns(seed));
-                let reach = 40.0 * size.scale();
+                let reach = size.lane_reach();
                 assert!((t.spawns[0].x + reach).abs() < 0.001);
                 assert!((t.spawns[1].x - reach).abs() < 0.001);
                 for p in t.spawns {

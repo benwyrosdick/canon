@@ -55,6 +55,7 @@ pub struct Net {
     remote_yaw: f32,
     remote_elevation: f32,
     remote_power: f32,
+    remote_z: f32,
     has_remote_aim: bool,
 }
 
@@ -109,6 +110,7 @@ pub fn connect(commands: &mut Commands, hello: Hello, relay: String, code: RoomC
         remote_yaw: 0.0,
         remote_elevation: 0.0,
         remote_power: 32.0,
+        remote_z: 0.0,
         has_remote_aim: false,
     });
 }
@@ -233,15 +235,20 @@ fn apply(
             yaw,
             elevation,
             power,
+            z,
         } => {
             net.remote_yaw = yaw;
             net.remote_elevation = elevation;
             net.remote_power = power;
+            net.remote_z = z;
             if !net.has_remote_aim {
-                let cannon = &mut game.cannons[1 - net.seat];
+                let i = 1 - net.seat;
+                let reach = game.size.lane_reach();
+                let cannon = &mut game.cannons[i];
                 cannon.yaw = yaw;
                 cannon.elevation = elevation;
                 cannon.power = power;
+                cannon.place_on_lane(z, reach, terrain);
                 net.has_remote_aim = true;
             }
         }
@@ -256,30 +263,38 @@ fn apply(
             yaw,
             elevation,
             power,
+            z,
         } if net.is_host() && game.active != net.seat => {
+            let reach = game.size.lane_reach();
             let cannon = &mut game.cannons[game.active];
             cannon.yaw = yaw;
             cannon.elevation = elevation;
             cannon.power = power;
+            cannon.place_on_lane(z, reach, terrain);
             game.fire();
             net.send(&Msg::ShotFired {
                 yaw,
                 elevation,
                 power,
+                z,
             });
         }
         Msg::ShotFired {
             yaw,
             elevation,
             power,
+            z,
         } if !net.is_host() => {
+            let reach = game.size.lane_reach();
             let cannon = &mut game.cannons[game.active];
             cannon.yaw = yaw;
             cannon.elevation = elevation;
             cannon.power = power;
+            cannon.place_on_lane(z, reach, terrain);
             net.remote_yaw = yaw;
             net.remote_elevation = elevation;
             net.remote_power = power;
+            net.remote_z = z;
             net.has_remote_aim = true;
             game.paused = false;
             game.fire();
@@ -353,7 +368,12 @@ fn apply(
     }
 }
 
-pub fn smooth(time: Res<Time>, net: Option<Res<Net>>, mut game: ResMut<Game>) {
+pub fn smooth(
+    time: Res<Time>,
+    net: Option<Res<Net>>,
+    mut game: ResMut<Game>,
+    terrain: Res<Terrain>,
+) {
     let Some(net) = net else {
         return;
     };
@@ -361,10 +381,16 @@ pub fn smooth(time: Res<Time>, net: Option<Res<Net>>, mut game: ResMut<Game>) {
         return;
     }
     let blend = 1.0 - (-16.0 * time.delta_secs()).exp();
+    let reach = game.size.lane_reach();
+    let aiming = game.phase == Phase::Aiming;
     let cannon = &mut game.cannons[1 - net.seat];
     cannon.yaw = lerp_angle(cannon.yaw, net.remote_yaw, blend);
     cannon.elevation += (net.remote_elevation - cannon.elevation) * blend;
     cannon.power += (net.remote_power - cannon.power) * blend;
+    if aiming {
+        let z = cannon.position.z + (net.remote_z - cannon.position.z) * blend;
+        cannon.place_on_lane(z, reach, &terrain);
+    }
 }
 
 fn lerp_angle(from: f32, to: f32, t: f32) -> f32 {

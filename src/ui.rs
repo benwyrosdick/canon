@@ -252,6 +252,7 @@ pub fn setup(mut commands: Commands) {
                             "A / D        Aim",
                             "W / S        Elevation",
                             "Q / E        Power",
+                            "Arrows       Move",
                             "Left-drag    Gauges",
                             "Shift        Fine tune",
                             "Space        Fire",

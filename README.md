@@ -264,7 +264,8 @@ cargo run --release --locked
 ## How to play
 
 1. Red goes first. Press **Enter** or click **Ready** to take control.
-2. Adjust aim, elevation, and power. Press **Space** or click **Fire**.
+2. Drive with the arrow keys if you want a new angle, then adjust aim, elevation,
+   and power. Press **Space** or click **Fire**.
 3. Watch the shell fly and the ground deform. The tracer records the last shot;
    the short team-colored guide shows barrel direction, not a predicted trajectory.
 4. Pass the keyboard to the next player when the handoff banner appears.
@@ -275,6 +276,7 @@ cargo run --release --locked
 | A / D | Decrease / increase aim bearing |
 | W / S | Raise / lower elevation (5–85°) |
 | Q / E | Decrease / increase power (15–52 m/s) |
+| Left / Right arrows | Drive along your north–south lane before firing |
 | Left-drag on gauges | Set bearing, elevation, and power |
 | Hold Shift | Fine aiming and power adjustment |
 | Enter / Space | Ready during handoff; fire while aiming |
@@ -302,8 +304,9 @@ crater changes the ground beneath it.
 - Your own cannon can take damage from your shots.
 - Each round consists of Red's turn and Blue's turn. They share a wind vector for
   fairness; the next round gets a new vector. Wind stays constant during flight.
-- Cannons cannot move horizontally. After an impact they settle down onto the
-  lowered terrain. Falling itself does not cause damage.
+- Before firing, a cannon may slide along its west or east lane, within the same
+  north–south range used for initial placement. After an impact they settle down
+  onto the lowered terrain. Falling itself does not cause damage.
 - Leaving the battlefield or exceeding 18 seconds of flight ends the shot as a miss.
 - Terrain deformation stops at bedrock. Craters persist until the next match.
 - Simultaneous destruction is treated as a draw.

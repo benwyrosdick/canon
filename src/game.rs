@@ -36,6 +36,13 @@ impl Cannon {
     pub fn muzzle(&self) -> Vec3 {
         self.position + Vec3::Y * 0.5 + self.direction() * 3.2
     }
+
+    pub(crate) fn place_on_lane(&mut self, z: f32, reach: f32, terrain: &Terrain) {
+        self.position.z = z.clamp(-reach, reach);
+        if let Some(ground) = terrain.height(self.position.x, self.position.z) {
+            self.position.y = ground + 1.2;
+        }
+    }
 }
 
 pub enum Effect {
@@ -288,6 +295,7 @@ pub fn input(
                     yaw: cannon.yaw,
                     elevation: cannon.elevation,
                     power: cannon.power,
+                    z: cannon.position.z,
                 });
             }
         } else if let Some(net) = net.as_deref() {
@@ -296,6 +304,7 @@ pub fn input(
                 yaw: cannon.yaw,
                 elevation: cannon.elevation,
                 power: cannon.power,
+                z: cannon.position.z,
             });
         }
     }
@@ -311,6 +320,8 @@ pub fn input(
     };
     let dt = time.delta_secs().min(0.05) * precision;
     let active = game.active;
+    let reach = game.size.lane_reach();
+    let along = if active == 0 { 1.0 } else { -1.0 };
     let cannon = &mut game.cannons[active];
     cannon.yaw += axis(KeyCode::KeyD, KeyCode::KeyA) * dt * 0.55;
     cannon.yaw = cannon.yaw.rem_euclid(std::f32::consts::TAU);
@@ -318,6 +329,11 @@ pub fn input(
         .clamp(5.0_f32.to_radians(), 85.0_f32.to_radians());
     cannon.power =
         (cannon.power + axis(KeyCode::KeyE, KeyCode::KeyQ) * dt * 14.0).clamp(15.0, 52.0);
+    let dz = along * axis(KeyCode::ArrowRight, KeyCode::ArrowLeft) * dt * 12.0;
+    if dz != 0.0 {
+        let z = cannon.position.z + dz;
+        cannon.place_on_lane(z, reach, &terrain);
+    }
     for (gauge, interaction, cursor) in &gauges {
         if *interaction != Interaction::Pressed {
             continue;
@@ -342,6 +358,7 @@ pub fn input(
                 yaw: cannon.yaw,
                 elevation: cannon.elevation,
                 power: cannon.power,
+                z: cannon.position.z,
             });
         }
     }
@@ -494,8 +511,8 @@ mod tests {
                     assert!((cannon.position.x - spawn.x).abs() < 0.001);
                     assert!((cannon.position.z - spawn.y).abs() < 0.001);
                 }
-                assert!((game.cannons[0].position.x + 40.0 * size.scale()).abs() < 0.001);
-                assert!((game.cannons[1].position.x - 40.0 * size.scale()).abs() < 0.001);
+                assert!((game.cannons[0].position.x + size.lane_reach()).abs() < 0.001);
+                assert!((game.cannons[1].position.x - size.lane_reach()).abs() < 0.001);
                 game.phase = Phase::Flying;
                 game.ball = Some(Ball {
                     position: Vec3::new(size.half() + 10.0, 100.0, 0.0),
@@ -767,5 +784,70 @@ mod tests {
         assert!((cannon.elevation.to_degrees() - 85.0).abs() < 0.01);
         assert!((cannon.power - 52.0).abs() < 0.01);
         assert_ne!(cannon.yaw, start.yaw);
+    }
+
+    fn input_app(game: Game, terrain: Terrain, dt: f32) -> App {
+        let mut time = Time::<()>::default();
+        time.advance_by(std::time::Duration::from_secs_f32(dt));
+        let mut app = App::new();
+        app.insert_resource(game)
+            .insert_resource(terrain)
+            .insert_resource(Assets::<Mesh>::default())
+            .insert_resource(time)
+            .insert_resource(ButtonInput::<KeyCode>::default())
+            .add_systems(Update, input);
+        app
+    }
+
+    #[test]
+    fn arrows_slide_the_active_tank_along_its_spawn_lane() {
+        let terrain = Terrain::new(1, MapSize::Small);
+        let mut game = Game::new(1, &terrain);
+        game.phase = Phase::Aiming;
+        let start = game.cannons[0].position;
+        let reach = MapSize::Small.lane_reach();
+        let mut app = input_app(game, terrain, 0.05);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::ArrowRight);
+        app.update();
+        {
+            let cannon = app.world().resource::<Game>().cannons[0];
+            assert!((cannon.position.x - start.x).abs() < 0.001);
+            assert!((cannon.position.z - (start.z + 0.6)).abs() < 0.001);
+            assert!(cannon.position.z.abs() <= reach + 0.001);
+        }
+
+        app.world_mut().resource_mut::<Game>().cannons[0].position.z = reach;
+        app.update();
+        assert!((app.world().resource::<Game>().cannons[0].position.z - reach).abs() < 0.001);
+
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.reset_all();
+            keys.press(KeyCode::ArrowLeft);
+        }
+        app.world_mut().resource_mut::<Game>().cannons[0].position.z = -reach;
+        app.update();
+        assert!((app.world().resource::<Game>().cannons[0].position.z + reach).abs() < 0.001);
+
+        app.world_mut().resource_mut::<Game>().phase = Phase::Handoff;
+        app.world_mut().resource_mut::<Game>().cannons[0].position.z = 0.0;
+        app.update();
+        assert_eq!(app.world().resource::<Game>().cannons[0].position.z, 0.0);
+
+        let terrain = Terrain::new(1, MapSize::Small);
+        let mut game = Game::new(1, &terrain);
+        game.phase = Phase::Aiming;
+        game.active = 1;
+        let start = game.cannons[1].position;
+        let mut app = input_app(game, terrain, 0.05);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::ArrowRight);
+        app.update();
+        let cannon = app.world().resource::<Game>().cannons[1];
+        assert!((cannon.position.x - start.x).abs() < 0.001);
+        assert!((cannon.position.z - (start.z - 0.6)).abs() < 0.001);
     }
 }
