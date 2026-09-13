@@ -3,19 +3,25 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != Darwin ]]; then
-    printf '%s\n' 'This packaging command requires macOS and Xcode Command Line Tools.' >&2
-    exit 1
+  printf '%s\n' 'This packaging command requires macOS and Xcode Command Line Tools.' >&2
+  exit 1
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROFILE=release
 case "${1:-}" in
-    '') ;;
-    --debug) PROFILE=debug ;;
-    *) printf 'Usage: bash scripts/build-macos.sh [--debug]\n' >&2; exit 2 ;;
+'') ;;
+--debug) PROFILE=debug ;;
+*)
+  printf 'Usage: bash scripts/build-macos.sh [--debug]\n' >&2
+  exit 2
+  ;;
 esac
 for tool in cargo swift iconutil codesign hdiutil plutil; do
-    command -v "$tool" >/dev/null || { printf 'Missing tool: %s\n' "$tool" >&2; exit 1; }
+  command -v "$tool" >/dev/null || {
+    printf 'Missing tool: %s\n' "$tool" >&2
+    exit 1
+  }
 done
 
 cd "$ROOT"
@@ -41,14 +47,14 @@ cp "$WORK/Canon.iconset/icon_512x512@2x.png" "$DIST/3D Canon.png"
 VERSION="$(cargo pkgid --manifest-path "$ROOT/Cargo.toml")"
 VERSION="${VERSION##*#}"
 VERSION="${VERSION##*@}"
-cat > "$APP/Contents/Info.plist" <<PLIST
+cat >"$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleExecutable</key><string>3D Canon</string>
-    <key>CFBundleIdentifier</key><string>com.canon3d.game</string>
+    <key>CFBundleIdentifier</key><string>com.benwyrosdick.canon3d</string>
     <key>CFBundleName</key><string>3D Canon</string>
     <key>CFBundleDisplayName</key><string>3D Canon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
@@ -66,9 +72,9 @@ plutil -lint "$APP/Contents/Info.plist"
 # Local builds get an ad-hoc signature. A Developer ID can be supplied for distribution.
 IDENTITY="${MACOS_SIGN_IDENTITY:--}"
 if [[ "$IDENTITY" == '-' ]]; then
-    codesign --force --sign - "$APP"
+  codesign --force --sign - "$APP"
 else
-    codesign --force --sign "$IDENTITY" --options runtime --timestamp "$APP"
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp "$APP"
 fi
 codesign --verify --deep --strict "$APP"
 
@@ -79,8 +85,18 @@ mkdir -p "$WORK/disk"
 ditto "$APP" "$WORK/disk/3D Canon.app"
 ln -s /Applications "$WORK/disk/Applications"
 hdiutil create -volname '3D Canon' -srcfolder "$WORK/disk" -format UDZO \
-    -ov "$DIST/3D Canon.dmg"
+  -ov "$DIST/3D Canon.dmg"
+
+if [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+  xcrun notarytool submit "$DIST/3D Canon.dmg" \
+    --apple-id "$APPLE_ID" \
+    --team-id "$APPLE_TEAM_ID" \
+    --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+    --wait
+  xcrun stapler staple "$DIST/3D Canon.dmg"
+  xcrun stapler staple "$DIST/3D Canon.app"
+fi
 
 printf '\nBuilt for %s (%s):\n  %s\n  %s\n' "$(uname -m)" "$PROFILE" \
-    "$DIST/3D Canon.app" "$DIST/3D Canon.dmg"
+  "$DIST/3D Canon.app" "$DIST/3D Canon.dmg"
 printf '%s\n' 'Open the DMG, then drag 3D Canon into Applications.'

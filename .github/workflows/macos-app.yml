@@ -15,13 +15,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.92.0
-      - name: Build app, icon, and disk image
+
+      - name: Import Developer ID certificate
+        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning
+          rm -f "$CERTIFICATE_PATH"
+
+      - name: Build, sign, and notarize
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: bash scripts/build-macos.sh
+
       - name: Verify package
         run: |
           codesign --verify --deep --strict "dist/macos/3D Canon.app"
+          codesign -dv --verbose=2 "dist/macos/3D Canon.app"
           hdiutil verify "dist/macos/3D Canon.dmg"
-      # The DMG preserves the executable permissions and app signature when downloaded.
+          if [[ -n "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" ]]; then
+            spctl --assess --type execute -vv "dist/macos/3D Canon.app"
+            xcrun stapler validate "dist/macos/3D Canon.dmg"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: 3D-Canon-macOS-arm64
