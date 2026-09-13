@@ -1,4 +1,4 @@
-use bevy::{prelude::*, ui::RelativeCursorPosition};
+use bevy::prelude::*;
 
 use crate::{
     net::{self, Msg, Net, PlayMode},
@@ -198,25 +198,6 @@ pub enum Action {
     SelectSize(MapSize),
 }
 
-#[derive(Component, Clone, Copy)]
-pub enum Gauge {
-    Aim,
-    Power,
-}
-
-/// Cursor is object-centered: (−0.5, −0.5) is the top-left of the widget.
-fn aim_from_cursor(pos: Vec2) -> (f32, f32) {
-    let yaw = ((pos.x + 0.5).clamp(0.0, 1.0) * 360.0 - 90.0)
-        .to_radians()
-        .rem_euclid(std::f32::consts::TAU);
-    let elevation = (5.0 + (0.5 - pos.y).clamp(0.0, 1.0) * 80.0).to_radians();
-    (yaw, elevation)
-}
-
-fn power_from_cursor(pos: Vec2) -> f32 {
-    15.0 + (0.5 - pos.y).clamp(0.0, 1.0) * 37.0
-}
-
 pub fn fresh_seed() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -234,7 +215,6 @@ pub fn input(
     mut terrain: ResMut<Terrain>,
     mut meshes: ResMut<Assets<Mesh>>,
     buttons: Query<(&Interaction, &Action), Changed<Interaction>>,
-    gauges: Query<(&Gauge, &Interaction, &RelativeCursorPosition)>,
 ) {
     let online = mode.as_deref() == Some(&PlayMode::Online);
     let waiting = net.as_ref().is_some_and(|net| net.waiting);
@@ -333,22 +313,6 @@ pub fn input(
     if dz != 0.0 {
         let z = cannon.position.z + dz;
         cannon.place_on_lane(z, reach, &terrain);
-    }
-    for (gauge, interaction, cursor) in &gauges {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        let Some(pos) = cursor.normalized else {
-            continue;
-        };
-        match gauge {
-            Gauge::Aim => {
-                let (yaw, elevation) = aim_from_cursor(pos);
-                cannon.yaw = yaw;
-                cannon.elevation = elevation;
-            }
-            Gauge::Power => cannon.power = power_from_cursor(pos),
-        }
     }
     if online && let Some(net) = net.as_deref_mut() {
         net.aim_timer += time.delta_secs();
@@ -705,85 +669,6 @@ mod tests {
             assert_eq!(g.phase, Phase::Finished(expected));
             assert_eq!(g.round, 1);
         }
-    }
-
-    #[test]
-    fn cursor_on_gauges_maps_to_bearing_elevation_and_power() {
-        let (yaw, elevation) = aim_from_cursor(Vec2::new(-0.5, 0.5));
-        assert!((yaw.to_degrees() + 90.0).rem_euclid(360.0) < 0.01);
-        assert!((elevation.to_degrees() - 5.0).abs() < 0.01);
-        let (yaw, elevation) = aim_from_cursor(Vec2::new(0.0, -0.5));
-        assert!(((yaw.to_degrees() + 90.0).rem_euclid(360.0) - 180.0).abs() < 0.01);
-        assert!((elevation.to_degrees() - 85.0).abs() < 0.01);
-        let (yaw, elevation) = aim_from_cursor(Vec2::new(2.0, -2.0));
-        assert!((yaw.to_degrees() + 90.0).rem_euclid(360.0) < 0.01);
-        assert!((elevation.to_degrees() - 85.0).abs() < 0.01);
-        assert!((power_from_cursor(Vec2::new(0.0, 0.5)) - 15.0).abs() < 0.01);
-        assert!((power_from_cursor(Vec2::new(0.0, -0.5)) - 52.0).abs() < 0.01);
-        assert!((power_from_cursor(Vec2::new(0.0, 0.0)) - 33.5).abs() < 0.01);
-    }
-
-    #[test]
-    fn dragging_gauges_aims_only_while_a_turn_is_live() {
-        let terrain = Terrain::new(1, MapSize::Small);
-        let mut game = Game::new(1, &terrain);
-        game.phase = Phase::Aiming;
-        let start = game.cannons[0];
-        let mut app = App::new();
-        app.insert_resource(game)
-            .insert_resource(terrain)
-            .insert_resource(Assets::<Mesh>::default())
-            .insert_resource(Time::<()>::default())
-            .insert_resource(ButtonInput::<KeyCode>::default())
-            .add_systems(Update, input);
-        let aim = app
-            .world_mut()
-            .spawn((
-                Gauge::Aim,
-                Interaction::Pressed,
-                RelativeCursorPosition {
-                    cursor_over: true,
-                    normalized: Some(Vec2::new(0.0, -0.5)),
-                },
-            ))
-            .id();
-        let power = app
-            .world_mut()
-            .spawn((
-                Gauge::Power,
-                Interaction::Pressed,
-                RelativeCursorPosition {
-                    cursor_over: true,
-                    normalized: Some(Vec2::new(0.0, -0.5)),
-                },
-            ))
-            .id();
-        app.update();
-        {
-            let cannon = app.world().resource::<Game>().cannons[0];
-            assert!(((cannon.yaw.to_degrees() + 90.0).rem_euclid(360.0) - 180.0).abs() < 0.01);
-            assert!((cannon.elevation.to_degrees() - 85.0).abs() < 0.01);
-            assert!((cannon.power - 52.0).abs() < 0.01);
-        }
-        app.world_mut().resource_mut::<Game>().paused = true;
-        app.world_mut()
-            .entity_mut(aim)
-            .insert(RelativeCursorPosition {
-                cursor_over: true,
-                normalized: Some(Vec2::new(-0.5, 0.5)),
-            });
-        app.world_mut()
-            .entity_mut(power)
-            .insert(RelativeCursorPosition {
-                cursor_over: true,
-                normalized: Some(Vec2::new(0.0, 0.5)),
-            });
-        app.update();
-        let cannon = app.world().resource::<Game>().cannons[0];
-        assert!(((cannon.yaw.to_degrees() + 90.0).rem_euclid(360.0) - 180.0).abs() < 0.01);
-        assert!((cannon.elevation.to_degrees() - 85.0).abs() < 0.01);
-        assert!((cannon.power - 52.0).abs() < 0.01);
-        assert_ne!(cannon.yaw, start.yaw);
     }
 
     fn input_app(game: Game, terrain: Terrain, dt: f32) -> App {

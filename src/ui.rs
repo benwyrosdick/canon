@@ -1,7 +1,7 @@
-use bevy::{prelude::*, ui::RelativeCursorPosition};
+use bevy::prelude::*;
 
 use crate::{
-    game::{Action, Game, Gauge, Phase},
+    game::{Action, Game, Phase},
     net::{Menu, MenuAction, Net, PlayMode},
     terrain::MapSize,
     visuals::{BLUE, GOLD, RED},
@@ -253,7 +253,6 @@ pub fn setup(mut commands: Commands) {
                             "W / S        Elevation",
                             "Q / E        Power",
                             "Arrows       Move",
-                            "Left-drag    Gauges",
                             "Shift        Fine tune",
                             "Space        Fire",
                             "Right-drag   Orbit",
@@ -369,20 +368,6 @@ pub fn setup(mut commands: Commands) {
                                                     BorderColor::all(GOLD),
                                                     BorderRadius::all(px(8)),
                                                 ));
-                                                scope.spawn((
-                                                    Button,
-                                                    Gauge::Aim,
-                                                    RelativeCursorPosition::default(),
-                                                    Node {
-                                                        position_type: PositionType::Absolute,
-                                                        left: px(0),
-                                                        top: px(0),
-                                                        width: percent(100),
-                                                        height: percent(100),
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(Color::NONE),
-                                                ));
                                             });
                                         scope_wrap.spawn((text("", 13.0, GOLD), Label::Bearing));
                                     });
@@ -403,7 +388,6 @@ pub fn setup(mut commands: Commands) {
                                                     padding: UiRect::all(px(2)),
                                                     flex_direction: FlexDirection::Column,
                                                     justify_content: JustifyContent::End,
-                                                    position_type: PositionType::Relative,
                                                     ..default()
                                                 },
                                                 BackgroundColor(Color::srgb(0.17, 0.22, 0.25)),
@@ -419,20 +403,6 @@ pub fn setup(mut commands: Commands) {
                                                     },
                                                     BackgroundColor(GOLD),
                                                     BorderRadius::all(px(3)),
-                                                ));
-                                                track.spawn((
-                                                    Button,
-                                                    Gauge::Power,
-                                                    RelativeCursorPosition::default(),
-                                                    Node {
-                                                        position_type: PositionType::Absolute,
-                                                        left: px(0),
-                                                        top: px(0),
-                                                        width: percent(100),
-                                                        height: percent(100),
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(Color::NONE),
                                                 ));
                                             });
                                         power.spawn((text("", 12.0, PAPER), Label::Power));
@@ -607,10 +577,6 @@ pub fn update(
     mut menu_root: Query<&mut Visibility, (With<MenuRoot>, Without<HostOnly>)>,
     mut host_only: Query<&mut Visibility, (With<HostOnly>, Without<MenuRoot>, Without<Label>)>,
     mut buttons: Query<(&Action, &Interaction, &mut BackgroundColor), Without<CodeSlot>>,
-    mut gauges: Query<
-        (&Interaction, &mut BackgroundColor),
-        (With<Gauge>, Without<Action>, Without<CodeSlot>),
-    >,
     mut glyphs: Query<(&CodeGlyph, &mut Text), Without<Label>>,
     mut slots: Query<(&CodeSlot, &mut BackgroundColor, &mut BorderColor), Without<Action>>,
 ) {
@@ -798,12 +764,6 @@ pub fn update(
                 Color::srgb(0.28, 0.36, 0.39)
             }
             Action::SelectSize(_) => Color::srgb(0.18, 0.25, 0.28),
-        };
-    }
-    for (interaction, mut background) in &mut gauges {
-        background.0 = match interaction {
-            Interaction::Pressed | Interaction::Hovered => PAPER.with_alpha(0.10),
-            Interaction::None => Color::NONE,
         };
     }
     let displayed = net
