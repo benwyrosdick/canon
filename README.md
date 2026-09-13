@@ -66,9 +66,10 @@ installing:
 open -n "/Applications/3D Canon.app" --args --relay=127.0.0.1:3478
 ```
 
-GitHub Actions also has a **macOS app** workflow: run it manually or push a `v*`
-tag, then download the `3D-Canon-macOS-arm64` artifact from the workflow run. It
-contains the disk image and PNG icon.
+GitHub Actions has a **macOS app** workflow: run it manually (**Actions → macOS
+app → Run workflow**), then download the `3D-Canon-macOS-arm64` artifact. It
+contains the disk image and PNG icon. Pushing a `v*` tag also builds it as part
+of a GitHub Release (see below).
 
 Local and CI builds use an **ad-hoc signature**, not Apple notarization. Downloaded
 copies may need approval in macOS Privacy & Security. For public distribution,
@@ -109,13 +110,19 @@ sudo pacman -S alsa-lib libxkbcommon vulkan-icd-loader wayland libx11
 sudo apt install libasound2t64 libxkbcommon0 libwayland-client0 libx11-6 libvulkan1 libudev1
 ```
 
-GitHub Actions has a **Linux app** workflow (manual or `v*` tag). Download the
-`3D-Canon-linux-x86_64` artifact. Building on Ubuntu 24.04 keeps glibc old enough
-for current Arch. An Arch-built binary may fail on older Debian/Ubuntu because
-Arch’s glibc is newer.
+GitHub Actions has a **Linux app** workflow (manual run). Download the
+`3D-Canon-linux-x86_64` artifact. Pushing a `v*` tag also attaches that tarball
+to a GitHub Release. Building on Ubuntu 24.04 keeps glibc old enough for current
+Arch. An Arch-built binary may fail on older Debian/Ubuntu because Arch’s glibc
+is newer.
 
 There is no AppImage or Flatpak in this version. A `.deb` / `.rpm` is unnecessary
 if you ship the tarball.
+
+Pushing a git tag matching `v*` (for example `v0.1.0`) runs **Release**: it builds
+the Linux tarball and the macOS DMG in parallel, then creates a GitHub Release
+with those files attached. Manual **Linux app** / **macOS app** workflow runs
+still only upload Actions artifacts.
 
 ### Online 1v1
 
