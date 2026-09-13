@@ -119,10 +119,32 @@ is newer.
 There is no AppImage or Flatpak in this version. A `.deb` / `.rpm` is unnecessary
 if you ship the tarball.
 
+### Windows package
+
+Build a zip with the game executable:
+
+```powershell
+powershell -File scripts/build-windows.ps1
+```
+
+Requires Windows, Rust's **MSVC** toolchain, and Visual Studio C++ Build Tools
+(or the Visual Studio workload **Desktop development with C++**). Output:
+**`dist/windows/3D-Canon-<version>-windows-x86_64.zip`**.
+
+Extract and double-click **3D Canon.exe**, or run it from a terminal:
+
+```powershell
+.\3D Canon.exe --local
+```
+
+GitHub Actions has a **Windows app** workflow (manual run). Download the
+`3D-Canon-windows-x86_64` artifact. Pushing a `v*` tag also attaches that zip
+to a GitHub Release.
+
 Pushing a git tag matching `v*` (for example `v0.1.0`) runs **Release**: it builds
-the Linux tarball and the macOS DMG in parallel, then creates a GitHub Release
-with those files attached. Manual **Linux app** / **macOS app** workflow runs
-still only upload Actions artifacts.
+the Linux tarball, macOS DMG, and Windows zip in parallel, then creates a GitHub
+Release with those files attached. Manual **Linux app** / **macOS app** /
+**Windows app** workflow runs still only upload Actions artifacts.
 
 ### Online 1v1
 
