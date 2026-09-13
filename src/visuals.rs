@@ -11,6 +11,21 @@ pub const RED: Color = Color::srgb(0.96, 0.28, 0.23);
 pub const BLUE: Color = Color::srgb(0.22, 0.64, 1.0);
 pub const GOLD: Color = Color::srgb(1.0, 0.79, 0.32);
 
+const WHEEL_RADIUS: f32 = 0.9;
+const WHEEL_HUB_Y: f32 = -0.35;
+const WHEEL_X: f32 = 1.35;
+const WHEEL_Z: f32 = 0.75;
+const WHEEL_CONTACT_Y: f32 = WHEEL_HUB_Y - WHEEL_RADIUS;
+const WHEEL_OFFSETS: [Vec2; 4] = [
+    Vec2::new(-WHEEL_X, -WHEEL_Z),
+    Vec2::new(-WHEEL_X, WHEEL_Z),
+    Vec2::new(WHEEL_X, -WHEEL_Z),
+    Vec2::new(WHEEL_X, WHEEL_Z),
+];
+const RING_RADIUS: f32 = 3.0;
+const RING_LIFT: f32 = 0.12;
+const RING_SEGMENTS: usize = 32;
+
 #[derive(Component)]
 pub struct CannonRoot(usize);
 #[derive(Component)]
@@ -23,6 +38,11 @@ pub struct Battlefield;
 pub struct Water;
 #[derive(Component)]
 pub struct CannonPart(usize);
+#[derive(Component, Clone, Copy)]
+pub struct Wheel {
+    owner: usize,
+    offset: Vec2,
+}
 #[derive(Component)]
 pub struct Debris {
     velocity: Vec3,
@@ -106,7 +126,7 @@ pub fn setup(
         perceptual_roughness: 0.4,
         ..default()
     });
-    let wheel_mesh = meshes.add(Cylinder::new(0.9, 0.45).mesh().resolution(12));
+    let wheel_mesh = meshes.add(Cylinder::new(WHEEL_RADIUS, 0.45).mesh().resolution(12));
     let hub_mesh = meshes.add(Cylinder::new(0.32, 0.5).mesh().resolution(12));
     let body_mesh = meshes.add(Cuboid::new(2.4, 0.8, 2.4));
     let dome_mesh = meshes.add(Sphere::new(1.05).mesh().ico(1).unwrap());
@@ -141,23 +161,23 @@ pub fn setup(
                     Transform::from_xyz(0.0, 0.35, 0.0).with_scale(Vec3::new(1.0, 0.7, 1.0)),
                     CannonPart(i),
                 ));
-                for x in [-1.35, 1.35] {
-                    for z in [-0.75, 0.75] {
-                        let transform = Transform::from_xyz(x, -0.35, z)
-                            .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2));
-                        root.spawn((
-                            Mesh3d(wheel_mesh.clone()),
-                            MeshMaterial3d(dark.clone()),
-                            transform,
-                            CannonPart(i),
-                        ));
-                        root.spawn((
-                            Mesh3d(hub_mesh.clone()),
-                            MeshMaterial3d(brass.clone()),
-                            transform,
-                            CannonPart(i),
-                        ));
-                    }
+                for offset in WHEEL_OFFSETS {
+                    let transform = Transform::from_xyz(offset.x, WHEEL_HUB_Y, offset.y)
+                        .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2));
+                    root.spawn((
+                        Mesh3d(wheel_mesh.clone()),
+                        MeshMaterial3d(dark.clone()),
+                        transform,
+                        CannonPart(i),
+                        Wheel { owner: i, offset },
+                    ));
+                    root.spawn((
+                        Mesh3d(hub_mesh.clone()),
+                        MeshMaterial3d(brass.clone()),
+                        transform,
+                        CannonPart(i),
+                        Wheel { owner: i, offset },
+                    ));
                 }
                 root.spawn((
                     Barrel(i),
@@ -239,25 +259,99 @@ pub fn sync_environment(
     }
 }
 
+fn tank_pose(position: Vec3, terrain: &Terrain) -> (Vec3, Quat) {
+    let fallback = position.y - 1.2;
+    let mut sample_at =
+        WHEEL_OFFSETS.map(|offset| Vec2::new(position.x + offset.x, position.z + offset.y));
+    let mut translation = Vec3::new(position.x, position.y, position.z);
+    let mut rotation = Quat::IDENTITY;
+    for _ in 0..2 {
+        let heights = sample_at.map(|point| terrain.height(point.x, point.y).unwrap_or(fallback));
+        let left = (heights[0] + heights[1]) * 0.5;
+        let right = (heights[2] + heights[3]) * 0.5;
+        let back = (heights[0] + heights[2]) * 0.5;
+        let front = (heights[1] + heights[3]) * 0.5;
+        let normal = Vec3::new(
+            -(right - left) / (2.0 * WHEEL_X),
+            1.0,
+            -(front - back) / (2.0 * WHEEL_Z),
+        )
+        .try_normalize()
+        .filter(|normal| normal.y > 0.2)
+        .unwrap_or(Vec3::Y);
+        rotation = Quat::from_rotation_arc(Vec3::Y, normal);
+        translation.y = WHEEL_OFFSETS
+            .iter()
+            .zip(heights)
+            .map(|(offset, ground)| {
+                ground - (rotation * Vec3::new(offset.x, WHEEL_CONTACT_Y, offset.y)).y
+            })
+            .sum::<f32>()
+            / 4.0;
+        sample_at = WHEEL_OFFSETS.map(|offset| {
+            let contact = translation + rotation * Vec3::new(offset.x, WHEEL_CONTACT_Y, offset.y);
+            Vec2::new(contact.x, contact.z)
+        });
+    }
+    (translation, rotation)
+}
+
+fn wheel_spin(z: f32) -> f32 {
+    -z / WHEEL_RADIUS
+}
+
+fn aiming_ring(center: Vec3, terrain: &Terrain) -> [Vec3; RING_SEGMENTS + 1] {
+    let fallback = center.y - 1.2;
+    std::array::from_fn(|i| {
+        let angle = i as f32 / RING_SEGMENTS as f32 * std::f32::consts::TAU;
+        let x = center.x + RING_RADIUS * angle.cos();
+        let z = center.z + RING_RADIUS * angle.sin();
+        let y = terrain.height(x, z).unwrap_or(fallback) + RING_LIFT;
+        Vec3::new(x, y, z)
+    })
+}
+
+#[allow(clippy::type_complexity)]
 pub fn sync_cannons(
     game: Res<Game>,
+    terrain: Res<Terrain>,
     wrecks: Res<Wrecks>,
     mut roots: Query<(&CannonRoot, &mut Transform)>,
-    mut barrels: Query<(&Barrel, &mut Transform), Without<CannonRoot>>,
+    mut barrels: Query<(&Barrel, &mut Transform), (Without<CannonRoot>, Without<Wheel>)>,
+    mut wheels: Query<(&Wheel, &mut Transform), (Without<CannonRoot>, Without<Barrel>)>,
     mut gizmos: Gizmos,
 ) {
+    let mut poses = [(Vec3::ZERO, Quat::IDENTITY); 2];
     for (root, mut transform) in &mut roots {
         if wrecks.0[root.0] {
             continue;
         }
-        transform.translation = game.cannons[root.0].position;
-        transform.rotation = Quat::IDENTITY;
+        let pose = tank_pose(game.cannons[root.0].position, &terrain);
+        poses[root.0] = pose;
+        transform.translation = pose.0;
+        transform.rotation = pose.1;
     }
     for (barrel, mut transform) in &mut barrels {
         if wrecks.0[barrel.0] || game.cannons[barrel.0].health <= 0.0 {
             continue;
         }
-        transform.rotation = Quat::from_rotation_arc(Vec3::Y, game.cannons[barrel.0].direction());
+        let aim = Quat::from_rotation_arc(Vec3::Y, game.cannons[barrel.0].direction());
+        transform.rotation = poses[barrel.0].1.inverse() * aim;
+    }
+    for (wheel, mut transform) in &mut wheels {
+        if wrecks.0[wheel.owner] {
+            continue;
+        }
+        let (origin, rotation) = poses[wheel.owner];
+        let hub = Vec3::new(wheel.offset.x, WHEEL_HUB_Y, wheel.offset.y);
+        let world = origin + rotation * hub;
+        let ground = terrain
+            .height(world.x, world.z)
+            .unwrap_or(world.y - WHEEL_RADIUS);
+        let lift = (ground + WHEEL_RADIUS - world.y).clamp(-0.4, 0.4);
+        transform.translation = hub + rotation.inverse() * Vec3::Y * lift;
+        transform.rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)
+            * Quat::from_rotation_y(wheel_spin(game.cannons[wheel.owner].position.z));
     }
     if game.phase == Phase::Aiming && game.cannons[game.active].health > 0.0 {
         let cannon = game.cannons[game.active];
@@ -267,14 +361,7 @@ pub fn sync_cannons(
             cannon.muzzle() + cannon.direction() * 8.0,
             color,
         );
-        gizmos.circle(
-            Isometry3d::new(
-                cannon.position - Vec3::Y * 1.0,
-                Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
-            ),
-            3.0,
-            GOLD,
-        );
+        gizmos.linestrip(aiming_ring(cannon.position, &terrain), GOLD);
     }
     if game.trail.len() > 1 {
         gizmos.linestrip(
@@ -510,5 +597,83 @@ pub fn animate_particles(
             transform.scale =
                 Vec3::splat(particle.size * (particle.remaining / particle.total).sqrt());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::terrain::{MapSize, Terrain};
+
+    fn contact_error(position: Vec3, terrain: &Terrain) -> f32 {
+        let (origin, rotation) = tank_pose(position, terrain);
+        WHEEL_OFFSETS
+            .into_iter()
+            .map(|offset| {
+                let contact = origin + rotation * Vec3::new(offset.x, WHEEL_CONTACT_Y, offset.y);
+                let ground = terrain.height(contact.x, contact.z).unwrap();
+                (contact.y - ground).abs()
+            })
+            .fold(0.0_f32, f32::max)
+    }
+
+    #[test]
+    fn wheels_sit_on_flat_pads_and_follow_uneven_ground() {
+        let mut terrain = Terrain::new(42, MapSize::Small);
+        for spawn in terrain.spawns {
+            let position = Vec3::new(
+                spawn.x,
+                terrain.height(spawn.x, spawn.y).unwrap() + 1.2,
+                spawn.y,
+            );
+            let (_, rotation) = tank_pose(position, &terrain);
+            assert!(rotation.angle_between(Quat::IDENTITY) < 0.02);
+            assert!(contact_error(position, &terrain) < 0.05);
+        }
+        let x = -terrain.size.lane_reach();
+        let z = 22.0;
+        let height = terrain.height(x, z).unwrap();
+        terrain.crater(Vec3::new(x, height, z + 4.0), 8.0);
+        let position = Vec3::new(x, terrain.height(x, z).unwrap() + 1.2, z);
+        let (_, rotation) = tank_pose(position, &terrain);
+        assert!(rotation.angle_between(Quat::IDENTITY) > 0.02);
+        assert!(contact_error(position, &terrain) < 0.25);
+    }
+
+    #[test]
+    fn aiming_ring_follows_flat_pads_and_craters() {
+        let mut terrain = Terrain::new(42, MapSize::Small);
+        let spawn = terrain.spawns[0];
+        let position = Vec3::new(
+            spawn.x,
+            terrain.height(spawn.x, spawn.y).unwrap() + 1.2,
+            spawn.y,
+        );
+        let ring = aiming_ring(position, &terrain);
+        let pad_y = terrain.height(spawn.x, spawn.y).unwrap() + RING_LIFT;
+        for point in ring {
+            assert!((point.y - pad_y).abs() < 0.02);
+            let ground = terrain.height(point.x, point.z).unwrap();
+            assert!((point.y - ground - RING_LIFT).abs() < 0.001);
+        }
+        let height = terrain.height(spawn.x, spawn.y).unwrap();
+        terrain.crater(Vec3::new(spawn.x, height, spawn.y + 2.0), 8.0);
+        let ring = aiming_ring(position, &terrain);
+        let ys: [f32; RING_SEGMENTS + 1] = ring.map(|point| point.y);
+        let min_y = ys.into_iter().fold(f32::MAX, f32::min);
+        let max_y = ys.into_iter().fold(f32::MIN, f32::max);
+        assert!(max_y - min_y > 1.0);
+        for point in ring {
+            let ground = terrain.height(point.x, point.z).unwrap();
+            assert!((point.y - ground - RING_LIFT).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn wheels_roll_one_turn_per_circumference() {
+        let circumference = std::f32::consts::TAU * WHEEL_RADIUS;
+        assert!((wheel_spin(circumference) + std::f32::consts::TAU).abs() < 0.001);
+        assert!(wheel_spin(0.0).abs() < 0.001);
+        assert!(wheel_spin(1.0) < wheel_spin(-1.0));
     }
 }
