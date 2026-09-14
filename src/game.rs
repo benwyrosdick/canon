@@ -6,6 +6,14 @@ use crate::{
     terrain::{MapSize, Rng, Terrain},
 };
 
+pub const WIND_CEILING: f32 = 25.0;
+pub const WIND_DEFAULT: f32 = 15.0;
+pub const WIND_STEP: f32 = 5.0;
+
+fn snap_max_wind(value: f32) -> f32 {
+    ((value / WIND_STEP).round() * WIND_STEP).clamp(0.0, WIND_CEILING)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Phase {
     Handoff,
@@ -60,6 +68,8 @@ pub struct Game {
     pub active: usize,
     pub round: u32,
     pub wind: Vec3,
+    /// Host-chosen cap for each round's random wind, in 5 m/s steps from 0 to 25.
+    pub max_wind: f32,
     pub phase: Phase,
     pub paused: bool,
     pub muted: bool,
@@ -72,6 +82,10 @@ pub struct Game {
 
 impl Game {
     pub fn new(seed: u64, terrain: &Terrain) -> Self {
+        Self::with_max_wind(seed, terrain, WIND_DEFAULT)
+    }
+
+    fn with_max_wind(seed: u64, terrain: &Terrain, max_wind: f32) -> Self {
         let spawns = terrain.spawns;
         let cannons = std::array::from_fn(|i| {
             let spawn = spawns[i];
@@ -96,6 +110,7 @@ impl Game {
             active: 0,
             round: 1,
             wind: Vec3::ZERO,
+            max_wind: snap_max_wind(max_wind),
             phase: Phase::Handoff,
             paused: false,
             muted: false,
@@ -111,8 +126,27 @@ impl Game {
 
     fn roll_wind(&mut self) {
         let angle = self.rng.range(0.0, std::f32::consts::TAU);
-        let speed = self.rng.range(0.0, 14.0);
+        let speed = self.rng.range(0.0, self.max_wind);
         self.wind = Vec3::new(angle.cos(), 0.0, angle.sin()) * speed;
+    }
+
+    pub fn set_max_wind(&mut self, max: f32) {
+        self.max_wind = snap_max_wind(max);
+        let speed = self.wind.length();
+        if speed > self.max_wind {
+            self.wind = if speed > 1e-6 {
+                self.wind * (self.max_wind / speed)
+            } else {
+                Vec3::ZERO
+            };
+        }
+    }
+
+    fn max_wind_msg(&self) -> Msg {
+        Msg::MaxWind {
+            max: self.max_wind.round() as u8,
+            wind: self.wind,
+        }
     }
 
     pub fn fire(&mut self) {
@@ -141,12 +175,13 @@ impl Game {
     ) {
         let muted = game.muted;
         let next_size = game.next_size;
+        let max_wind = game.max_wind;
         let mut next = Terrain::new(seed, size);
         next.mesh = terrain.mesh.clone();
         if let Some(mesh) = meshes.get_mut(&terrain.mesh) {
             *mesh = next.build_mesh();
         }
-        *game = Game::new(seed, &next);
+        *game = Game::with_max_wind(seed, &next, max_wind);
         game.muted = muted;
         game.next_size = next_size;
         *terrain = next;
@@ -200,6 +235,7 @@ pub enum Action {
     Primary,
     Restart,
     SelectSize(MapSize),
+    NudgeMaxWind(i32),
 }
 
 pub fn fresh_seed() -> u64 {
@@ -230,6 +266,7 @@ pub fn input(
     let mut primary = keys.just_pressed(KeyCode::Space) || keys.just_pressed(KeyCode::Enter);
     let mut restart = keys.just_pressed(KeyCode::KeyR);
     let mut apply_size = None;
+    let mut send_max_wind = false;
     for (interaction, action) in &buttons {
         if *interaction == Interaction::Pressed {
             match action {
@@ -242,6 +279,12 @@ pub fn input(
                     }
                 }
                 Action::SelectSize(_) => {}
+                Action::NudgeMaxWind(delta) if host => {
+                    let next = game.max_wind + *delta as f32;
+                    game.set_max_wind(next);
+                    send_max_wind = true;
+                }
+                Action::NudgeMaxWind(_) => {}
             }
         }
     }
@@ -252,6 +295,7 @@ pub fn input(
                 seed: game.seed,
                 size,
             });
+            net.send(&game.max_wind_msg());
         }
         return;
     }
@@ -265,8 +309,12 @@ pub fn input(
         Game::restart_world(seed, size, &mut game, &mut terrain, &mut meshes);
         if let Some(net) = net.as_deref() {
             net.send(&Msg::NewMatch { seed, size });
+            net.send(&game.max_wind_msg());
         }
         return;
+    }
+    if send_max_wind && let Some(net) = net.as_deref() {
+        net.send(&game.max_wind_msg());
     }
     if keys.just_pressed(KeyCode::KeyM) {
         game.muted = !game.muted;
@@ -594,6 +642,63 @@ mod tests {
         assert_eq!(game.phase, Phase::Handoff);
         assert_ne!(game.seed, 42);
         assert_eq!(app.world().resource::<Terrain>().size, MapSize::Large);
+    }
+
+    #[test]
+    fn max_wind_steps_by_five_and_caps_the_current_blow() {
+        let mut app = App::new();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut terrain = Terrain::new(42, MapSize::Small);
+        terrain.mesh = meshes.add(terrain.build_mesh());
+        let mut game = Game::new(42, &terrain);
+        game.phase = Phase::Aiming;
+        game.wind = Vec3::X * 18.0;
+        assert_eq!(game.max_wind, 15.0);
+        app.insert_resource(game)
+            .insert_resource(terrain)
+            .insert_resource(meshes)
+            .insert_resource(Time::<()>::default())
+            .insert_resource(ButtonInput::<KeyCode>::default())
+            .add_systems(Update, input);
+        app.world_mut()
+            .spawn((Action::NudgeMaxWind(-5), Interaction::Pressed));
+        app.update();
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.max_wind, 10.0);
+        assert!((game.wind.length() - 10.0).abs() < 0.001);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+        app.world_mut()
+            .spawn((Action::NudgeMaxWind(-5), Interaction::Pressed));
+        app.update();
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.max_wind, 5.0);
+        assert!((game.wind.length() - 5.0).abs() < 0.001);
+
+        for _ in 0..2 {
+            app.world_mut()
+                .spawn((Action::NudgeMaxWind(-5), Interaction::Pressed));
+            app.update();
+        }
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.max_wind, 0.0);
+        assert_eq!(game.wind, Vec3::ZERO);
+
+        app.world_mut()
+            .spawn((Action::NudgeMaxWind(-5), Interaction::Pressed));
+        app.update();
+        assert_eq!(app.world().resource::<Game>().max_wind, 0.0);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyR);
+        app.update();
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.max_wind, 0.0);
+        assert_eq!(game.wind, Vec3::ZERO);
+        assert_eq!(game.phase, Phase::Handoff);
     }
 
     fn simulation_app(size: MapSize) -> App {

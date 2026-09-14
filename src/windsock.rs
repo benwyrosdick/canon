@@ -1,6 +1,14 @@
-use bevy::{asset::RenderAssetUsages, mesh::PrimitiveTopology, prelude::*};
+use bevy::{
+    asset::RenderAssetUsages,
+    camera::{RenderTarget, visibility::RenderLayers},
+    ecs::hierarchy::ChildSpawnerCommands,
+    mesh::PrimitiveTopology,
+    prelude::*,
+    render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
+};
 
 use crate::{
+    camera::MainCamera,
     game::Game,
     terrain::{MapSize, Terrain},
 };
@@ -12,41 +20,79 @@ const BANDS: usize = 5;
 const SECTIONS: usize = BANDS * 3;
 const SIDES: usize = 16;
 
+const HUD_LAYER: usize = 1;
+const HUD_ORIGIN: Vec3 = Vec3::ZERO;
+const HUD_DISTANCE: f32 = 10.0;
+const HUD_HEIGHT: f32 = 26.0;
+const HUD_LOOK_Y: f32 = 4.0;
+
 #[derive(Component)]
 pub struct Mast;
 
 #[derive(Component)]
 pub struct Swivel;
 
+#[derive(Component)]
+pub struct HudWind;
+
+#[derive(Component)]
+pub struct HudWindCamera;
+
+#[derive(Resource, Clone, Copy)]
+pub struct HudWindView {
+    pub camera: Entity,
+}
+
 #[derive(Resource)]
 pub struct Fabric(Handle<Mesh>);
+
+struct SockParts {
+    metal: Handle<StandardMaterial>,
+    concrete: Handle<StandardMaterial>,
+    fabric: Handle<StandardMaterial>,
+    rose_paint: Handle<StandardMaterial>,
+    cloth: Handle<Mesh>,
+    pole: Handle<Mesh>,
+    foot: Handle<Mesh>,
+    ring: Handle<Mesh>,
+    cap: Handle<Mesh>,
+    rose: Handle<Mesh>,
+}
 
 pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     terrain: Res<Terrain>,
     game: Res<Game>,
 ) {
-    let metal = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.65, 0.71, 0.74),
-        metallic: 0.65,
-        perceptual_roughness: 0.45,
-        ..default()
-    });
-    let concrete = materials.add(Color::srgb(0.45, 0.46, 0.42));
-    let fabric = materials.add(StandardMaterial {
-        // The tube is open at both ends, with visible fabric on the inside as well.
-        cull_mode: None,
-        double_sided: true,
-        perceptual_roughness: 1.0,
-        ..default()
-    });
-    let cloth = meshes.add(fabric_mesh(game.wind.length(), 0.0));
-    let pole = meshes.add(Cylinder::new(0.16, POLE_HEIGHT).mesh().resolution(12));
-    let foot = meshes.add(Cylinder::new(0.85, 0.3).mesh().resolution(8));
-    let ring = meshes.add(Torus::new(MOUTH_RADIUS - 0.045, MOUTH_RADIUS + 0.045));
-    let cap = meshes.add(Sphere::new(0.24).mesh().ico(1).unwrap());
+    let parts = SockParts {
+        metal: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.65, 0.71, 0.74),
+            metallic: 0.65,
+            perceptual_roughness: 0.45,
+            ..default()
+        }),
+        concrete: materials.add(Color::srgb(0.45, 0.46, 0.42)),
+        fabric: materials.add(StandardMaterial {
+            // The tube is open at both ends, with visible fabric on the inside as well.
+            cull_mode: None,
+            double_sided: true,
+            perceptual_roughness: 1.0,
+            ..default()
+        }),
+        rose_paint: materials.add(StandardMaterial {
+            perceptual_roughness: 1.0,
+            ..default()
+        }),
+        cloth: meshes.add(fabric_mesh(game.wind.length(), 0.0)),
+        pole: meshes.add(Cylinder::new(0.16, POLE_HEIGHT).mesh().resolution(12)),
+        foot: meshes.add(Cylinder::new(0.85, 0.3).mesh().resolution(8)),
+        ring: meshes.add(Torus::new(MOUTH_RADIUS - 0.045, MOUTH_RADIUS + 0.045)),
+        cap: meshes.add(Sphere::new(0.24).mesh().ico(1).unwrap()),
+        rose: meshes.add(compass_rose_mesh()),
+    };
 
     let site = terrain.size.windsock_site();
     commands
@@ -57,51 +103,127 @@ pub fn setup(
             Visibility::default(),
         ))
         .with_children(|mast| {
-            mast.spawn((
-                Mesh3d(meshes.add(compass_rose_mesh())),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    perceptual_roughness: 1.0,
-                    ..default()
-                })),
-                Transform::from_xyz(0.0, 0.04, 0.0),
-            ));
-            mast.spawn((
-                Mesh3d(foot),
-                MeshMaterial3d(concrete),
-                Transform::from_xyz(0.0, 0.18, 0.0),
-            ));
-            mast.spawn((
-                Mesh3d(pole),
-                MeshMaterial3d(metal.clone()),
-                Transform::from_xyz(0.0, POLE_HEIGHT / 2.0, 0.0),
-            ));
-            mast.spawn((
-                Mesh3d(cap),
-                MeshMaterial3d(metal.clone()),
-                Transform::from_xyz(0.0, POLE_HEIGHT, 0.0),
-            ));
-            mast.spawn((
-                Swivel,
-                Transform::from_xyz(0.0, POLE_HEIGHT + MOUTH_RADIUS, 0.0)
-                    .with_rotation(heading(game.wind)),
-                Visibility::default(),
-            ))
-            .with_children(|sock| {
-                sock.spawn((
-                    Mesh3d(ring),
-                    MeshMaterial3d(metal),
-                    Transform::from_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
-                ));
-                sock.spawn((
-                    Mesh3d(cloth.clone()),
-                    MeshMaterial3d(fabric),
-                    Transform::default(),
-                    // The fabric changes shape every frame; its initial bounds are not permanent.
-                    bevy::camera::visibility::NoFrustumCulling,
-                ));
-            });
+            attach_sock(mast, RenderLayers::default(), &parts, game.wind);
         });
-    commands.insert_resource(Fabric(cloth));
+
+    let hud_layer = RenderLayers::layer(HUD_LAYER);
+    commands
+        .spawn((
+            Mast,
+            HudWind,
+            Name::new("HUD windsock"),
+            Transform::from_translation(HUD_ORIGIN),
+            Visibility::default(),
+            hud_layer.clone(),
+        ))
+        .with_children(|mast| {
+            attach_sock(mast, hud_layer.clone(), &parts, game.wind);
+        });
+    commands.spawn((
+        DirectionalLight {
+            illuminance: 16000.0,
+            shadows_enabled: false,
+            ..default()
+        },
+        Transform::from_xyz(-40.0, 80.0, 30.0).looking_at(Vec3::ZERO, Vec3::Y),
+        hud_layer.clone(),
+    ));
+    commands.spawn((
+        PointLight {
+            intensity: 1_200_000.0,
+            range: 50.0,
+            shadows_enabled: false,
+            color: Color::srgb(1.0, 0.96, 0.9),
+            ..default()
+        },
+        Transform::from_xyz(6.0, 18.0, 8.0),
+        hud_layer.clone(),
+    ));
+
+    let mut image = Image::new_uninit(
+        default(),
+        TextureDimension::D2,
+        TextureFormat::Bgra8UnormSrgb,
+        RenderAssetUsages::all(),
+    );
+    image.texture_descriptor.usage =
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+    let image_handle = images.add(image);
+    let camera = commands
+        .spawn((
+            HudWindCamera,
+            Camera3d::default(),
+            Projection::from(PerspectiveProjection {
+                fov: 0.7,
+                ..default()
+            }),
+            Camera {
+                order: -1,
+                target: RenderTarget::Image(image_handle.into()),
+                clear_color: ClearColorConfig::Custom(Color::srgb(0.07, 0.10, 0.11)),
+                ..default()
+            },
+            bevy::core_pipeline::tonemapping::Tonemapping::Reinhard,
+            hud_view(Vec3::NEG_Z),
+            hud_layer,
+        ))
+        .id();
+    commands.insert_resource(HudWindView { camera });
+    commands.insert_resource(Fabric(parts.cloth));
+}
+
+fn attach_sock(
+    mast: &mut ChildSpawnerCommands,
+    layer: RenderLayers,
+    parts: &SockParts,
+    wind: Vec3,
+) {
+    mast.spawn((
+        Mesh3d(parts.rose.clone()),
+        MeshMaterial3d(parts.rose_paint.clone()),
+        Transform::from_xyz(0.0, 0.04, 0.0),
+        layer.clone(),
+    ));
+    mast.spawn((
+        Mesh3d(parts.foot.clone()),
+        MeshMaterial3d(parts.concrete.clone()),
+        Transform::from_xyz(0.0, 0.18, 0.0),
+        layer.clone(),
+    ));
+    mast.spawn((
+        Mesh3d(parts.pole.clone()),
+        MeshMaterial3d(parts.metal.clone()),
+        Transform::from_xyz(0.0, POLE_HEIGHT / 2.0, 0.0),
+        layer.clone(),
+    ));
+    mast.spawn((
+        Mesh3d(parts.cap.clone()),
+        MeshMaterial3d(parts.metal.clone()),
+        Transform::from_xyz(0.0, POLE_HEIGHT, 0.0),
+        layer.clone(),
+    ));
+    mast.spawn((
+        Swivel,
+        Transform::from_xyz(0.0, POLE_HEIGHT + MOUTH_RADIUS, 0.0).with_rotation(heading(wind)),
+        Visibility::default(),
+        layer.clone(),
+    ))
+    .with_children(|sock| {
+        sock.spawn((
+            Mesh3d(parts.ring.clone()),
+            MeshMaterial3d(parts.metal.clone()),
+            Transform::from_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
+            layer.clone(),
+        ));
+        sock.spawn((
+            Mesh3d(parts.cloth.clone()),
+            MeshMaterial3d(parts.fabric.clone()),
+            Transform::default(),
+            // The fabric changes shape every frame; its initial bounds are not permanent.
+            bevy::camera::visibility::NoFrustumCulling,
+            layer,
+        ));
+    });
 }
 
 fn heading(wind: Vec3) -> Quat {
@@ -111,6 +233,20 @@ fn heading(wind: Vec3) -> Quat {
     Quat::from_rotation_arc(Vec3::X, direction)
 }
 
+/// Ground-plane forward of a camera. Falls back to world north when looking straight down.
+fn camera_heading(transform: &Transform) -> Vec3 {
+    let forward = *transform.forward();
+    Vec3::new(forward.x, 0.0, forward.z)
+        .try_normalize()
+        .unwrap_or(Vec3::NEG_Z)
+}
+
+/// Orbit the HUD sock so the top of the pane is the main camera's heading.
+fn hud_view(heading: Vec3) -> Transform {
+    let eye = HUD_ORIGIN - heading * HUD_DISTANCE + Vec3::Y * HUD_HEIGHT;
+    Transform::from_translation(eye).looking_at(HUD_ORIGIN + Vec3::Y * HUD_LOOK_Y, Vec3::Y)
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn update(
     game: Res<Game>,
@@ -118,8 +254,35 @@ pub fn update(
     time: Res<Time>,
     fabric: Res<Fabric>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut masts: Query<&mut Transform, With<Mast>>,
-    mut swivels: Query<&mut Transform, (With<Swivel>, Without<Mast>)>,
+    mut masts: Query<&mut Transform, (With<Mast>, Without<HudWind>, Without<HudWindCamera>)>,
+    mut swivels: Query<
+        &mut Transform,
+        (
+            With<Swivel>,
+            Without<Mast>,
+            Without<HudWind>,
+            Without<HudWindCamera>,
+        ),
+    >,
+    mut hud_cameras: Query<
+        &mut Transform,
+        (
+            With<HudWindCamera>,
+            Without<Mast>,
+            Without<HudWind>,
+            Without<Swivel>,
+        ),
+    >,
+    main_cameras: Query<
+        &Transform,
+        (
+            With<MainCamera>,
+            Without<HudWindCamera>,
+            Without<Mast>,
+            Without<HudWind>,
+            Without<Swivel>,
+        ),
+    >,
     mut clock: Local<f32>,
     mut last_map: Local<Option<(u64, MapSize)>>,
 ) {
@@ -134,6 +297,12 @@ pub fn update(
     if *last_map != Some(map) {
         *last_map = Some(map);
         *clock = 0.0;
+    }
+    if let Ok(main) = main_cameras.single() {
+        let view = hud_view(camera_heading(main));
+        for mut transform in &mut hud_cameras {
+            *transform = view;
+        }
     }
     if game.paused {
         return;
@@ -150,7 +319,7 @@ pub fn update(
 /// A tapered, open tube. The mouth stays circular and pinned to its swivel ring.
 /// More wind lifts the tail and inflates the fabric; flutter grows toward the tip.
 fn fabric_mesh(speed: f32, time: f32) -> Mesh {
-    let inflation = (speed / 12.0).clamp(0.0, 1.0);
+    let inflation = (speed / 25.0).clamp(0.0, 1.0);
     let vertex = |section: usize, side: usize| {
         let t = section as f32 / SECTIONS as f32;
         let angle = side as f32 / SIDES as f32 * std::f32::consts::TAU;
@@ -301,4 +470,67 @@ fn compass_rose_mesh() -> Mesh {
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
     .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
     .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{game::Game, terrain::Terrain};
+
+    #[test]
+    fn hud_view_puts_the_camera_heading_at_the_top() {
+        let north = hud_view(Vec3::NEG_Z);
+        assert!(north.translation.z > 0.0);
+        assert!(north.translation.x.abs() < 0.001);
+
+        let east = hud_view(Vec3::X);
+        assert!(east.translation.x < 0.0);
+        assert!(east.translation.z.abs() < 0.001);
+    }
+
+    #[test]
+    fn camera_heading_ignores_pitch() {
+        let transform = Transform::from_xyz(10.0, 8.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y);
+        let heading = camera_heading(&transform);
+        let expected = Vec3::new(-1.0, 0.0, -1.0).normalize();
+        assert!((heading - expected).length() < 0.001);
+        assert!(heading.y.abs() < 0.001);
+    }
+
+    fn hud_app(main: Transform) -> (App, Entity) {
+        let terrain = Terrain::new(1, MapSize::Small);
+        let game = Game::new(1, &terrain);
+        let mut app = App::new();
+        app.insert_resource(game)
+            .insert_resource(terrain)
+            .insert_resource(Time::<()>::default())
+            .insert_resource(Assets::<Mesh>::default())
+            .insert_resource(Fabric(Handle::default()))
+            .add_systems(Update, update);
+        app.world_mut()
+            .spawn((MainCamera, Camera3d::default(), main));
+        let hud = app
+            .world_mut()
+            .spawn((HudWindCamera, Camera3d::default(), Transform::default()))
+            .id();
+        (app, hud)
+    }
+
+    #[test]
+    fn hud_camera_orbits_with_the_main_view() {
+        let (mut app, hud) =
+            hud_app(Transform::from_xyz(0.0, 10.0, 40.0).looking_at(Vec3::ZERO, Vec3::Y));
+        app.update();
+        let transform = app.world().get::<Transform>(hud).unwrap();
+        assert!((transform.translation.z - HUD_DISTANCE).abs() < 0.5);
+        assert!(transform.translation.x.abs() < 0.5);
+        assert!((transform.translation.y - HUD_HEIGHT).abs() < 0.5);
+
+        let (mut app, hud) =
+            hud_app(Transform::from_xyz(-40.0, 10.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y));
+        app.update();
+        let transform = app.world().get::<Transform>(hud).unwrap();
+        assert!((transform.translation.x + HUD_DISTANCE).abs() < 0.5);
+        assert!(transform.translation.z.abs() < 0.5);
+    }
 }

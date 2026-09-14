@@ -82,9 +82,8 @@ fn main() {
                 boot_net,
                 visuals::setup,
                 camera::setup,
-                ui::setup,
                 sound::setup,
-                windsock::setup,
+                (windsock::setup, ui::setup).chain(),
             ),
         )
         .add_systems(FixedUpdate, game::simulate)
@@ -96,7 +95,6 @@ fn main() {
                 net::smooth,
                 game::input,
                 visuals::sync_environment,
-                windsock::update,
                 visuals::sync_cannons,
                 visuals::wreck_cannons,
                 visuals::animate_debris,
@@ -104,6 +102,7 @@ fn main() {
                 visuals::effects,
                 visuals::animate_particles,
                 camera::update,
+                windsock::update,
                 ui::update,
             )
                 .chain(),

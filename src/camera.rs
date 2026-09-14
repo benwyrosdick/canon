@@ -8,6 +8,9 @@ use crate::{
     terrain::MapSize,
 };
 
+#[derive(Component)]
+pub struct MainCamera;
+
 #[derive(Resource)]
 pub struct CameraRig {
     yaw: f32,
@@ -41,6 +44,7 @@ pub fn setup(mut commands: Commands, game: Res<Game>) {
     let radius = 39.0;
     let (target, offset) = overview_view(game.size.scale());
     commands.spawn((
+        MainCamera,
         Camera3d::default(),
         // No lookup textures required: use a tonemapper that is entirely analytic.
         bevy::core_pipeline::tonemapping::Tonemapping::Reinhard,
@@ -74,7 +78,7 @@ pub fn update(
     motion: Res<AccumulatedMouseMotion>,
     mut scroll: MessageReader<MouseWheel>,
     mut rig: ResMut<CameraRig>,
-    mut cameras: Query<(&mut Transform, &mut DistanceFog), With<Camera3d>>,
+    mut cameras: Query<(&mut Transform, &mut DistanceFog), With<MainCamera>>,
 ) {
     let wheel: f32 = scroll.read().map(|event| event.y).sum();
     if game.paused {
@@ -170,6 +174,7 @@ mod tests {
             })
             .add_systems(Update, update);
         app.world_mut().spawn((
+            MainCamera,
             Camera3d::default(),
             Transform::default(),
             DistanceFog::default(),
@@ -213,7 +218,7 @@ mod tests {
     fn camera_eye(app: &mut App) -> Vec3 {
         let mut cameras = app
             .world_mut()
-            .query_filtered::<&Transform, With<Camera3d>>();
+            .query_filtered::<&Transform, With<MainCamera>>();
         cameras.single(app.world()).unwrap().translation
     }
 

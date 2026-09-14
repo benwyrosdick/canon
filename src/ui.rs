@@ -1,10 +1,11 @@
 use bevy::prelude::*;
 
 use crate::{
-    game::{Action, Game, Phase},
+    game::{Action, Game, Phase, WIND_CEILING},
     net::{Menu, MenuAction, Net, PlayMode},
     terrain::MapSize,
     visuals::{BLUE, GOLD, RED},
+    windsock::HudWindView,
 };
 
 const INK: Color = Color::srgb(0.045, 0.075, 0.10);
@@ -18,6 +19,7 @@ pub enum Label {
     Elevation,
     Power,
     Wind,
+    MaxWind,
     Round,
     Health(usize),
     Message,
@@ -56,7 +58,7 @@ fn text(value: &str, size: f32, color: Color) -> impl Bundle {
     )
 }
 
-pub fn setup(mut commands: Commands) {
+pub fn setup(mut commands: Commands, hud: Res<HudWindView>) {
     commands
         .spawn(Node {
             width: percent(100),
@@ -81,7 +83,7 @@ pub fn setup(mut commands: Commands) {
                             flex_direction: FlexDirection::Column,
                             padding: UiRect::all(px(20)),
                             row_gap: px(6),
-                            width: px(290),
+                            width: px(400),
                             ..default()
                         },
                         BackgroundColor(INK.with_alpha(0.93)),
@@ -91,34 +93,111 @@ pub fn setup(mut commands: Commands) {
                         brand.spawn(text("3D CANON", 34.0, PAPER));
                         brand.spawn(text("W I N D  &  W A R F A R E", 12.0, GOLD));
                         brand.spawn((text("", 14.0, MUTED), Label::Round));
-                        brand.spawn((text("", 15.0, PAPER), Label::Wind));
                         brand.spawn((text("", 14.0, GOLD), Label::Map));
-                        brand.spawn((text("NEXT MAP SIZE", 12.0, MUTED), HostOnly));
                         brand
                             .spawn((
                                 HostOnly,
                                 Node {
-                                    column_gap: px(5),
+                                    column_gap: px(14),
+                                    align_items: AlignItems::Start,
                                     ..default()
                                 },
                             ))
-                            .with_children(|sizes| {
-                                for size in MapSize::ALL {
-                                    sizes
-                                        .spawn((
-                                            Button,
-                                            Action::SelectSize(size),
-                                            Node {
-                                                padding: UiRect::axes(px(9), px(9)),
-                                                ..default()
-                                            },
-                                            BackgroundColor(INK),
-                                            BorderRadius::all(px(6)),
-                                        ))
-                                        .with_children(|button| {
-                                            button.spawn(text(size.label(), 13.0, PAPER));
+                            .with_children(|cols| {
+                                cols.spawn(Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(6),
+                                    ..default()
+                                })
+                                .with_children(|size_col| {
+                                    size_col.spawn(text("NEXT MAP SIZE", 12.0, MUTED));
+                                    size_col
+                                        .spawn(Node {
+                                            column_gap: px(5),
+                                            ..default()
+                                        })
+                                        .with_children(|sizes| {
+                                            for size in MapSize::ALL {
+                                                sizes
+                                                    .spawn((
+                                                        Button,
+                                                        Action::SelectSize(size),
+                                                        Node {
+                                                            padding: UiRect::axes(px(9), px(9)),
+                                                            ..default()
+                                                        },
+                                                        BackgroundColor(INK),
+                                                        BorderRadius::all(px(6)),
+                                                    ))
+                                                    .with_children(|button| {
+                                                        button.spawn(text(
+                                                            size.label(),
+                                                            13.0,
+                                                            PAPER,
+                                                        ));
+                                                    });
+                                            }
                                         });
-                                }
+                                });
+                                cols.spawn(Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(6),
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                })
+                                .with_children(|wind_col| {
+                                    wind_col.spawn(text("MAX WIND", 12.0, MUTED));
+                                    wind_col
+                                        .spawn(Node {
+                                            column_gap: px(5),
+                                            align_items: AlignItems::Center,
+                                            ..default()
+                                        })
+                                        .with_children(|step| {
+                                            step.spawn((
+                                                Button,
+                                                Action::NudgeMaxWind(-5),
+                                                Node {
+                                                    padding: UiRect::axes(px(8), px(9)),
+                                                    min_width: px(28),
+                                                    align_items: AlignItems::Center,
+                                                    justify_content: JustifyContent::Center,
+                                                    ..default()
+                                                },
+                                                BackgroundColor(INK),
+                                                BorderRadius::all(px(6)),
+                                            ))
+                                            .with_children(|button| {
+                                                button.spawn(text("-", 16.0, PAPER));
+                                            });
+                                            step.spawn((
+                                                text("15 m/s", 13.0, GOLD),
+                                                Label::MaxWind,
+                                                Node {
+                                                    min_width: px(56),
+                                                    align_items: AlignItems::Center,
+                                                    justify_content: JustifyContent::Center,
+                                                    ..default()
+                                                },
+                                            ));
+                                            step.spawn((
+                                                Button,
+                                                Action::NudgeMaxWind(5),
+                                                Node {
+                                                    padding: UiRect::axes(px(8), px(9)),
+                                                    min_width: px(28),
+                                                    align_items: AlignItems::Center,
+                                                    justify_content: JustifyContent::Center,
+                                                    ..default()
+                                                },
+                                                BackgroundColor(INK),
+                                                BorderRadius::all(px(6)),
+                                            ))
+                                            .with_children(|button| {
+                                                button.spawn(text("+", 16.0, PAPER));
+                                            });
+                                        });
+                                });
                             });
                         brand
                             .spawn((
@@ -161,52 +240,111 @@ pub fn setup(mut commands: Commands) {
                         });
                     });
                     top.spawn(Node {
-                        column_gap: px(12),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::End,
+                        row_gap: px(12),
                         ..default()
                     })
-                    .with_children(|players| {
-                        for i in 0..2 {
-                            let color = if i == 0 { RED } else { BLUE };
-                            players
-                                .spawn((
-                                    Node {
-                                        width: px(180),
-                                        padding: UiRect::all(px(16)),
-                                        flex_direction: FlexDirection::Column,
-                                        row_gap: px(10),
-                                        ..default()
-                                    },
-                                    BackgroundColor(INK.with_alpha(0.93)),
-                                    BorderRadius::all(px(14)),
-                                ))
-                                .with_children(|card| {
-                                    card.spawn(text(
-                                        if i == 0 { "01 / RED" } else { "02 / BLUE" },
-                                        16.0,
-                                        color,
-                                    ));
-                                    card.spawn((text("100 HP", 25.0, PAPER), Label::Health(i)));
-                                    card.spawn((
-                                        Node {
-                                            width: percent(100),
-                                            height: px(5),
-                                            ..default()
-                                        },
-                                        BackgroundColor(Color::srgb(0.17, 0.22, 0.25)),
-                                    ))
-                                    .with_children(|track| {
-                                        track.spawn((
-                                            HealthFill(i),
+                    .with_children(|stack| {
+                        stack
+                            .spawn(Node {
+                                column_gap: px(12),
+                                ..default()
+                            })
+                            .with_children(|players| {
+                                for i in 0..2 {
+                                    let color = if i == 0 { RED } else { BLUE };
+                                    players
+                                        .spawn((
                                             Node {
-                                                width: percent(100),
-                                                height: percent(100),
+                                                width: px(180),
+                                                padding: UiRect::all(px(16)),
+                                                flex_direction: FlexDirection::Column,
+                                                row_gap: px(10),
                                                 ..default()
                                             },
-                                            BackgroundColor(color),
-                                        ));
-                                    });
+                                            BackgroundColor(INK.with_alpha(0.93)),
+                                            BorderRadius::all(px(14)),
+                                        ))
+                                        .with_children(|card| {
+                                            card.spawn(text(
+                                                if i == 0 { "01 / RED" } else { "02 / BLUE" },
+                                                16.0,
+                                                color,
+                                            ));
+                                            card.spawn((
+                                                text("100 HP", 25.0, PAPER),
+                                                Label::Health(i),
+                                            ));
+                                            card.spawn((
+                                                Node {
+                                                    width: percent(100),
+                                                    height: px(5),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(Color::srgb(0.17, 0.22, 0.25)),
+                                            ))
+                                            .with_children(|track| {
+                                                track.spawn((
+                                                    HealthFill(i),
+                                                    Node {
+                                                        width: percent(100),
+                                                        height: percent(100),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(color),
+                                                ));
+                                            });
+                                        });
+                                }
+                            });
+                        stack
+                            .spawn((
+                                Node {
+                                    width: px(372),
+                                    padding: UiRect::all(px(14)),
+                                    flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::Center,
+                                    row_gap: px(8),
+                                    ..default()
+                                },
+                                BackgroundColor(INK.with_alpha(0.93)),
+                                BorderRadius::all(px(14)),
+                            ))
+                            .with_children(|wind| {
+                                wind.spawn(text("WIND", 12.0, MUTED));
+                                wind.spawn((text("", 18.0, PAPER), Label::Wind));
+                                wind.spawn((
+                                    Node {
+                                        width: px(168),
+                                        height: px(168),
+                                        position_type: PositionType::Relative,
+                                        overflow: Overflow::clip(),
+                                        border: UiRect::all(px(1)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgb(0.07, 0.10, 0.11)),
+                                    BorderColor::all(GOLD.with_alpha(0.55)),
+                                    BorderRadius::all(px(84)),
+                                    ViewportNode::new(hud.camera),
+                                ))
+                                .with_children(|rose| {
+                                    rose.spawn((
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            top: px(5),
+                                            left: percent(50),
+                                            width: px(8),
+                                            height: px(8),
+                                            margin: UiRect::left(px(-4)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(GOLD),
+                                        BorderRadius::all(px(4)),
+                                        ZIndex(1),
+                                    ));
                                 });
-                        }
+                            });
                     });
                 });
             screen
@@ -638,7 +776,8 @@ pub fn update(
             ),
             Label::Elevation => format!("ELV  {:04.1}", cannon.elevation.to_degrees()),
             Label::Power => format!("{:.0} m/s", cannon.power),
-            Label::Wind => format!("WIND  {:.1} m/s toward {compass}", game.wind.length()),
+            Label::Wind => format!("{:.1} m/s toward {compass}", game.wind.length()),
+            Label::MaxWind => format!("{:.0} m/s", game.max_wind),
             Label::Round => format!(
                 "ROUND {:02}  /  SOUND {}\nSEED {}",
                 game.round,
@@ -751,6 +890,16 @@ pub fn update(
                 Color::srgb(0.28, 0.36, 0.39)
             }
             Action::SelectSize(_) => Color::srgb(0.18, 0.25, 0.28),
+            Action::NudgeMaxWind(delta)
+                if (*delta < 0 && game.max_wind <= 0.0)
+                    || (*delta > 0 && game.max_wind >= WIND_CEILING) =>
+            {
+                Color::srgb(0.12, 0.16, 0.18)
+            }
+            Action::NudgeMaxWind(_) if *interaction == Interaction::Hovered => {
+                Color::srgb(0.28, 0.36, 0.39)
+            }
+            Action::NudgeMaxWind(_) => Color::srgb(0.18, 0.25, 0.28),
         };
     }
     let displayed = net

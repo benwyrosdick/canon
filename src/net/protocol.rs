@@ -12,6 +12,7 @@ const IMPACT: u8 = 7;
 const MISS: u8 = 8;
 const TURN: u8 = 9;
 const NEW_MATCH: u8 = 10;
+const MAX_WIND: u8 = 11;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Msg {
@@ -63,6 +64,10 @@ pub enum Msg {
     NewMatch {
         seed: u64,
         size: MapSize,
+    },
+    MaxWind {
+        max: u8,
+        wind: Vec3,
     },
 }
 
@@ -167,6 +172,11 @@ impl Msg {
                 push_u64(&mut out, seed);
                 out.push(size_byte(size));
             }
+            Self::MaxWind { max, wind } => {
+                out.push(MAX_WIND);
+                out.push(max);
+                push_vec3(&mut out, wind);
+            }
         }
         out
     }
@@ -228,6 +238,10 @@ impl Msg {
             NEW_MATCH => Some(Self::NewMatch {
                 seed: take_u64(bytes, &mut i)?,
                 size: map_size(take_u8(bytes, &mut i)?)?,
+            }),
+            MAX_WIND => Some(Self::MaxWind {
+                max: take_u8(bytes, &mut i)?,
+                wind: take_vec3(bytes, &mut i)?,
             }),
             _ => None,
         }
@@ -365,6 +379,10 @@ mod tests {
             Msg::NewMatch {
                 seed: 9,
                 size: MapSize::Medium,
+            },
+            Msg::MaxWind {
+                max: 15,
+                wind: Vec3::Z * 4.0,
             },
         ];
         for msg in samples {

@@ -159,6 +159,10 @@ pub fn pump(
                         seed: game.seed,
                         size: game.size,
                     });
+                    net.send(&Msg::MaxWind {
+                        max: game.max_wind.round() as u8,
+                        wind: game.wind,
+                    });
                     if let Some(menu) = menu.as_deref_mut() {
                         menu.status.clear();
                     }
@@ -230,6 +234,10 @@ fn apply(
         }
         Msg::NewMatch { seed, size } => {
             Game::restart_world(seed, size, game, terrain, meshes);
+        }
+        Msg::MaxWind { max, wind } if !net.is_host() => {
+            game.max_wind = (max as f32).clamp(0.0, 25.0);
+            game.wind = wind;
         }
         Msg::Aim {
             yaw,
