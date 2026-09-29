@@ -1,0 +1,22 @@
+Cargo.lock
+  h_4d9554034adb05 1492
+Cargo.toml
+  h_4d9554034adb05 3
+README.md
+  h_4d9554034adb05 164
+justfile
+  h_4d9554034adb05 9,21
+src/net/session.rs
+  h_4d9554034adb05 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dbd9a0279cb08224409fceee8cbfbb0fcc19277b",
+  "prompts": {},
+  "humans": {
+    "h_4d9554034adb05": {
+      "author": "Ben Wyrosdick <ben.wyrosdick@gmail.com>"
+    }
+  }
+}
