@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use super::{
     client::{self, Incoming, Link},
     protocol::Msg,
-    wire::{Hello, PING, RoomCode, error_text},
+    wire::{Hello, RoomCode, error_text},
 };
 use crate::{
     game::{Effect, Game, Phase},
@@ -11,7 +11,7 @@ use crate::{
     terrain::Terrain,
 };
 
-pub const DEFAULT_RELAY: &str = "192.241.147.149:3478";
+pub const DEFAULT_RELAY: &str = "canon.boxd.sh:59222";
 
 #[derive(Resource, Clone, Debug, PartialEq, Eq)]
 pub enum PlayMode {
@@ -50,7 +50,6 @@ pub struct Net {
     pub code: RoomCode,
     pub waiting: bool,
     pub aim_timer: f32,
-    ping_timer: f32,
     ball_timer: f32,
     remote_yaw: f32,
     remote_elevation: f32,
@@ -105,7 +104,6 @@ pub fn connect(commands: &mut Commands, hello: Hello, relay: String, code: RoomC
         code,
         waiting: true,
         aim_timer: 0.0,
-        ping_timer: 0.0,
         ball_timer: 0.0,
         remote_yaw: 0.0,
         remote_elevation: 0.0,
@@ -184,16 +182,15 @@ pub fn pump(
                 status = Some(error_text(code).to_string());
                 drop_net = true;
             }
-            Incoming::PeerLeft | Incoming::Closed => {
-                status = Some("The other player disconnected.".into());
+            Incoming::PeerLeft => {
+                status.get_or_insert_with(|| "The other player disconnected.".into());
+                drop_net = true;
+            }
+            Incoming::Closed => {
+                status.get_or_insert_with(|| "Lost connection to the relay.".into());
                 drop_net = true;
             }
         }
-    }
-    net.ping_timer += time.delta_secs();
-    if net.ping_timer >= 10.0 {
-        net.ping_timer = 0.0;
-        net.link.send_bytes(&[PING]);
     }
     if *mode == PlayMode::Online && !net.waiting && net.is_host() && game.phase == Phase::Flying {
         net.ball_timer += time.delta_secs();
@@ -212,6 +209,7 @@ pub fn pump(
         *mode = PlayMode::Menu;
         if let Some(menu) = menu.as_deref_mut() {
             menu.status = status.unwrap_or_default();
+            menu.join_code.clear();
         }
         commands.remove_resource::<Net>();
     }
@@ -444,6 +442,7 @@ pub fn menu_input(
             *mode = PlayMode::Local;
             game.paused = false;
             menu.status.clear();
+            menu.join_code.clear();
         }
         Some(MenuAction::Host) => {
             let code = RoomCode::random(crate::game::fresh_seed());

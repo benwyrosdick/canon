@@ -161,7 +161,7 @@ Default listen address is `0.0.0.0:3478`. Pass `127.0.0.1:3478` or `0.0.0.0:9000
 
 Then each player:
 
-1. Run `cargo run --locked` (connects to `192.241.147.149:3478` by default).
+1. Run `cargo run --locked` (connects to `canon.boxd.sh:59222` by default).
 2. **Host** creates a 4-character room code (no `0/O/1/I`). Share that code.
 3. **Join** types the code and clicks Join.
 4. Host is Red. Guest is Blue. Only the active player can aim and fire.
