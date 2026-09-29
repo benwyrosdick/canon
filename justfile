@@ -6,7 +6,7 @@ default:
 
 # Run the game (extra args pass through, e.g. `just run --local --seed=42`)
 run *args:
-    cargo run --locked --bin canon-3d -- {{args}}
+    cargo run --bin canon-3d -- {{args}}
 
 # Run an optimized build of the game
 run-release *args:
@@ -18,7 +18,7 @@ relay *args:
 
 # Build debug binaries
 build:
-    cargo build --locked
+    cargo build
 
 # Build optimized binaries
 build-release:
