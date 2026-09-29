@@ -1,8 +1,9 @@
 [package]
 name = "canon-3d"
-version = "0.1.0"
+version = "1.3.0"
 edition = "2024"
 rust-version = "1.88"
+default-run = "canon-3d"
 description = "A local two-player, destructible-terrain artillery game"
 license = "MIT"
 
