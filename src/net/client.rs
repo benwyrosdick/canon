@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn wakes_named_hosts_only() {
-        assert_eq!(wake_host("canon.boxd.sh:59222"), Some("canon.boxd.sh"));
+        assert_eq!(wake_host("canon.boxd.benwyrosdick.com:59222"), Some("canon.boxd.benwyrosdick.com"));
         assert_eq!(wake_host("127.0.0.1:3478"), None);
         assert_eq!(wake_host("[::1]:3478"), None);
         assert_eq!(wake_host("localhost:3478"), None);

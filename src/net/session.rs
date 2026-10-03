@@ -11,7 +11,7 @@ use crate::{
     terrain::Terrain,
 };
 
-pub const DEFAULT_RELAY: &str = "canon.boxd.sh:59222";
+pub const DEFAULT_RELAY: &str = "canon.boxd.benwyrosdick.com:59222";
 
 #[derive(Resource, Clone, Debug, PartialEq, Eq)]
 pub enum PlayMode {
